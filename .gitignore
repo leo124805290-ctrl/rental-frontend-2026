@@ -42,8 +42,8 @@ dist/
 # Source maps
 *.map
 
-# Package lock
-package-lock.json
+# Package locks
+!package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
