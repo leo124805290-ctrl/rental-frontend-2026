@@ -35,8 +35,8 @@ coverage/
 tsconfig.tsbuildinfo
 
 # Backend build output (if any)
-*.js
-!next.config.js
+# Build output
+dist/
 *.d.ts
 
 # Source maps
