@@ -61,13 +61,6 @@ export default function HomePage() {
 
   return (
     <div className="space-y-12">
-      {/* CSS 測試區塊 */}
-      <div style={{ backgroundColor: 'red', color: 'white', padding: '20px', fontSize: '24px', marginBottom: '20px' }}>
-        如果你看到這個紅色區塊，HTML 正常但 CSS 有問題
-      </div>
-      <div className="bg-blue-500 text-white p-4 text-2xl mb-4">
-        如果你看到這個藍色區塊，Tailwind CSS 正常運作
-      </div>
       {/* 首頁標題 */}
       <div className="text-center space-y-4">
         <div className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm font-medium mb-4">
