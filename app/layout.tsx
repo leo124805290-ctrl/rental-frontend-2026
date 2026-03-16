@@ -58,6 +58,44 @@ export default function RootLayout({
             </div>
           </header>
 
+          {/* 導航選單 */}
+          <nav className="bg-white border-b shadow-sm">
+            <div className="container mx-auto px-4">
+              <div className="flex overflow-x-auto py-2 space-x-1">
+                <a href="/" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  🏠 儀表板
+                </a>
+                <a href="/properties" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  🏢 物業管理
+                </a>
+                <a href="/tenants" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  👤 租客管理
+                </a>
+                <a href="/payments" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  💰 收租管理
+                </a>
+                <a href="/meter-readings" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  🔌 抄電錶
+                </a>
+                <a href="/checkout" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  🚪 退租結算
+                </a>
+                <a href="/expenses" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  📉 支出管理
+                </a>
+                <a href="/incomes" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  📈 補充收入
+                </a>
+                <a href="/reports" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  📊 損益報表
+                </a>
+                <a href="/maintenance" className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100 whitespace-nowrap">
+                  🔧 維修紀錄
+                </a>
+              </div>
+            </div>
+          </nav>
+
           {/* 主內容 */}
           <main className="flex-1 container mx-auto px-4 py-8">
             {children}
