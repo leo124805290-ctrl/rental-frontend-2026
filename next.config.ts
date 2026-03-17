@@ -3,7 +3,7 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   /* 基礎配置 */
   reactStrictMode: true,
-  swcMinify: true,
+  // Next.js 15 已不需要 swcMinify（且會觸發警告）
   poweredByHeader: false,
   generateEtags: true,
 
@@ -66,7 +66,7 @@ const nextConfig: NextConfig = {
   /* 重寫規則（API 代理） */
   rewrites: async () => {
     // @ts-ignore - process.env 由 Next.js 提供
-    const apiUrl = process.env['NEXT_PUBLIC_API_URL'] || 'http://localhost:3001';
+    const apiUrl = process.env['NEXT_PUBLIC_API_URL'] || 'https://taiwan-landlord-2026.zeabur.app';
     
     return [
       {

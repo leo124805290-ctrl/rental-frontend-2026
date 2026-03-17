@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, Trash2, Building, MapPin, Phone, Calendar } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import PropertyForm, { type PropertyFormData } from './components/property-form';
+import PropertyForm, { type PropertyFormData, type PropertyFormSubmitData } from './components/property-form';
 import { api } from '@/lib/api-client';
 
 // 模擬物業資料類型
@@ -15,11 +16,12 @@ interface Property {
   name: string;
   address: string;
   totalFloors: number;
+  totalRooms?: number;
   landlordName: string;
   landlordPhone: string;
   landlordDeposit: number;
   landlordMonthlyRent: number;
-  prepaidPeriod: number;
+  prepayCycleMonths: number;
   contractStartDate: string | null;
   contractEndDate: string | null;
   createdAt: string;
@@ -27,6 +29,7 @@ interface Property {
 }
 
 export default function PropertiesPage() {
+  const router = useRouter();
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +61,7 @@ export default function PropertiesPage() {
           landlordPhone: '0912-345-678',
           landlordDeposit: 60000,
           landlordMonthlyRent: 30000,
-          prepaidPeriod: 3,
+          prepayCycleMonths: 3,
           contractStartDate: '2026-01-01T00:00:00.000Z',
           contractEndDate: '2026-12-31T23:59:59.999Z',
           createdAt: '2026-01-01T00:00:00.000Z',
@@ -94,7 +97,7 @@ export default function PropertiesPage() {
     }
   };
 
-  const handleSubmitProperty = async (data: any) => {
+  const handleSubmitProperty = async (data: PropertyFormSubmitData) => {
     // PropertyForm 使用的是表單資料（非後端格式），這裡做最小映射
     const payload = {
       name: data.name,
@@ -104,7 +107,7 @@ export default function PropertiesPage() {
       landlordPhone: data.landlordPhone,
       landlordDeposit: Number(data.landlordDeposit || 0),
       landlordMonthlyRent: Number(data.landlordMonthlyRent || 0),
-      prepaidPeriod: Number(data.prepaidPeriod || 1),
+      prepayCycleMonths: Number(data.prepaidPeriod || 1),
       contractStartDate: data.contractStartDate ? new Date(data.contractStartDate).toISOString() : null,
       contractEndDate: data.contractEndDate ? new Date(data.contractEndDate).toISOString() : null,
     };
@@ -113,9 +116,29 @@ export default function PropertiesPage() {
       if (editingProperty) {
         const updated = await api.put<Property>(`/api/properties/${editingProperty.id}`, payload);
         setProperties((prev) => prev.map((p) => (p.id === editingProperty.id ? updated : p)));
+        setFormOpen(false);
       } else {
         const created = await api.post<Property>('/api/properties', payload);
+        // 建立房間（逐間呼叫 POST /api/rooms）
+        for (const cfg of data.floorConfigs) {
+          const roomCount = Math.max(0, Number(cfg.roomCount) || 0);
+          for (let i = 1; i <= roomCount; i++) {
+            const roomNumber = String(cfg.floor * 100 + i);
+            await api.post('/api/rooms', {
+              propertyId: created.id,
+              roomNumber,
+              floor: cfg.floor,
+              monthlyRent: Number(cfg.monthlyRent || 0), // 元
+              depositAmount: Number(cfg.depositAmount || 0), // 元
+              electricityRate: Math.round(Number(cfg.electricityPrice || 0) * 100), // 分
+              status: 'vacant',
+            });
+          }
+        }
+
         setProperties((prev) => [created, ...prev]);
+        setFormOpen(false);
+        router.push(`/properties/${created.id}`);
       }
     } catch (err) {
       console.error('儲存物業失敗', err);
@@ -320,7 +343,7 @@ export default function PropertiesPage() {
                 landlordPhone: editingProperty.landlordPhone,
                 landlordDeposit: editingProperty.landlordDeposit,
                 landlordMonthlyRent: editingProperty.landlordMonthlyRent,
-                prepaidPeriod: editingProperty.prepaidPeriod,
+                prepaidPeriod: editingProperty.prepayCycleMonths,
                 ...(editingProperty.contractStartDate
                   ? { contractStartDate: editingProperty.contractStartDate.split('T')[0] }
                   : {}),

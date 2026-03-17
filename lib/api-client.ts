@@ -5,7 +5,8 @@
 
 // 基礎 API URL
 // @ts-ignore - process.env 由 Next.js 提供
-const API_BASE_URL = process.env['NEXT_PUBLIC_API_URL'] || 'http://localhost:3001';
+// 一律走同源 `/api/*`，由 next.config.ts rewrites 代理到後端
+const API_BASE_URL = '';
 
 // 請求逾時時間（毫秒）
 const REQUEST_TIMEOUT = 10000;
@@ -125,7 +126,8 @@ async function request<T = any>(
       ...options,
       headers,
       signal: controller.signal,
-      credentials: 'include',
+      // 跨網域呼叫 Zeabur 後端時避免因 credentials 造成 CORS 失敗
+      credentials: 'omit',
     });
 
     clearTimeout(timeoutId);

@@ -96,6 +96,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </nav>
           </aside>
 
+          {/* 手機版遮罩層：點擊後關閉側邊欄 */}
+          {sidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+              onClick={() => setSidebarOpen(false)}
+              aria-hidden="true"
+            />
+          )}
+
           {/* 主要內容區 */}
           <div className="flex-1 flex flex-col min-w-0">
             {/* 頂部列 */}

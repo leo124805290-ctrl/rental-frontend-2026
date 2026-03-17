@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Building, MapPin, Phone, Calendar, Home, Users, Plus, Edit, Trash2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { api } from '@/lib/api-client';
 
 // 模擬物業資料類型
 interface Property {
@@ -71,92 +72,10 @@ export default function PropertyDetailPage() {
     setError(null);
 
     try {
-      // 模擬 API 請求延遲
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      // 模擬物業資料
-      const mockProperty: Property = {
-        id: propertyId,
-        name: '台北市信義區公寓',
-        address: '台北市信義區信義路五段',
-        totalFloors: 5,
-        landlordName: '陳先生',
-        landlordPhone: '0912-345-678',
-        landlordDeposit: 60000,
-        landlordMonthlyRent: 30000,
-        prepaidPeriod: 3,
-        contractStartDate: '2026-01-01T00:00:00.000Z',
-        contractEndDate: '2026-12-31T23:59:59.999Z',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-03-14T10:30:00.000Z',
-      };
-
-      // 模擬房間資料
-      const mockRooms: Room[] = [
-        {
-          id: 'room-1',
-          propertyId,
-          roomNumber: '101',
-          floor: 1,
-          monthlyRent: 8000,
-          depositAmount: 8000,
-          electricityRate: 350,
-          status: 'occupied',
-          createdAt: '2026-01-15T00:00:00.000Z',
-          updatedAt: '2026-03-14T10:30:00.000Z',
-        },
-        {
-          id: 'room-2',
-          propertyId,
-          roomNumber: '102',
-          floor: 1,
-          monthlyRent: 8000,
-          depositAmount: 8000,
-          electricityRate: 350,
-          status: 'vacant',
-          createdAt: '2026-01-15T00:00:00.000Z',
-          updatedAt: '2026-03-14T10:30:00.000Z',
-        },
-        {
-          id: 'room-3',
-          propertyId,
-          roomNumber: '201',
-          floor: 2,
-          monthlyRent: 8500,
-          depositAmount: 8500,
-          electricityRate: 350,
-          status: 'reserved',
-          createdAt: '2026-01-15T00:00:00.000Z',
-          updatedAt: '2026-03-14T10:30:00.000Z',
-        },
-        {
-          id: 'room-4',
-          propertyId,
-          roomNumber: '202',
-          floor: 2,
-          monthlyRent: 8500,
-          depositAmount: 8500,
-          electricityRate: 350,
-          status: 'maintenance',
-          createdAt: '2026-01-15T00:00:00.000Z',
-          updatedAt: '2026-03-14T10:30:00.000Z',
-        },
-        {
-          id: 'room-5',
-          propertyId,
-          roomNumber: '301',
-          floor: 3,
-          monthlyRent: 9000,
-          depositAmount: 9000,
-          electricityRate: 350,
-          status: 'vacant',
-          createdAt: '2026-01-15T00:00:00.000Z',
-          updatedAt: '2026-03-14T10:30:00.000Z',
-        },
-      ];
-
-      setProperty(mockProperty);
-      setRooms(mockRooms);
+      const p = await api.get<Property>(`/api/properties/${propertyId}`);
+      const r = await api.get<Room[]>(`/api/rooms?propertyId=${propertyId}`);
+      setProperty(p);
+      setRooms(r);
     } catch (err) {
       setError('載入資料失敗，請稍後再試');
       console.error('載入物業詳情錯誤:', err);

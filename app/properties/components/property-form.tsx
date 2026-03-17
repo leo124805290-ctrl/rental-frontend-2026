@@ -1,10 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+
+export interface FloorConfig {
+  floor: number;
+  roomCount: number;
+  monthlyRent: number; // 元
+  depositAmount: number; // 元
+  electricityPrice: number; // 元/度 (可小數)，送出時轉 electricityRate(分)
+}
 
 // 物業資料類型
 export interface PropertyFormData {
@@ -20,10 +28,14 @@ export interface PropertyFormData {
   contractEndDate: string;
 }
 
+export interface PropertyFormSubmitData extends PropertyFormData {
+  floorConfigs: FloorConfig[];
+}
+
 interface PropertyFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: PropertyFormData) => void;
+  onSubmit: (data: PropertyFormSubmitData) => void | Promise<void>;
   initialData?: Partial<PropertyFormData>;
   isEditing?: boolean;
 }
@@ -49,12 +61,67 @@ export default function PropertyForm({
     contractEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] ?? '',
   };
 
-  const [formData, setFormData] = useState<PropertyFormData>({
+  const [formData, setFormData] = useState<PropertyFormData>(() => ({
     ...defaultFormData,
     ...initialData,
-  });
+  }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const createDefaultFloorConfigs = (totalFloors: number): FloorConfig[] => {
+    const floors = Math.max(1, Math.min(50, Number(totalFloors) || 1));
+    return Array.from({ length: floors }, (_, idx) => {
+      const floor = idx + 1;
+      const monthlyRent = 5000 + (floor - 1) * 500;
+      return {
+        floor,
+        roomCount: 3,
+        monthlyRent,
+        depositAmount: monthlyRent,
+        electricityPrice: 3.5,
+      };
+    });
+  };
+
+  const [floorConfigs, setFloorConfigs] = useState<FloorConfig[]>(
+    () => createDefaultFloorConfigs(formData.totalFloors)
+  );
+
+  // Dialog 重新開啟 / 切換編輯目標時，同步表單資料
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData({
+      ...defaultFormData,
+      ...initialData,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isEditing, initialData]);
+
+  // totalFloors 變更時，自動產生每層設定欄位（保留既有已填值）
+  useEffect(() => {
+    const nextTotal = Math.max(1, Math.min(50, Number(formData.totalFloors) || 1));
+    setFloorConfigs((prev) => {
+      const byFloor = new Map(prev.map((c) => [c.floor, c]));
+      return Array.from({ length: nextTotal }, (_, idx) => {
+        const floor = idx + 1;
+        const existing = byFloor.get(floor);
+        if (existing) return existing;
+        const monthlyRent = 5000 + (floor - 1) * 500;
+        return {
+          floor,
+          roomCount: 3,
+          monthlyRent,
+          depositAmount: monthlyRent,
+          electricityPrice: 3.5,
+        };
+      });
+    });
+  }, [formData.totalFloors]);
+
+  const totalAutoRooms = useMemo(
+    () => floorConfigs.reduce((sum, f) => sum + (Number(f.roomCount) || 0), 0),
+    [floorConfigs]
+  );
 
   // 驗證表單
   const validateForm = (): boolean => {
@@ -85,6 +152,18 @@ export default function PropertyForm({
       newErrors['prepaidPeriod'] = '預付週期必須大於 0';
     }
 
+    if (!isEditing) {
+      if (floorConfigs.length !== Math.max(1, Number(formData.totalFloors) || 1)) {
+        newErrors['floorConfigs'] = '樓層設定產生異常，請重新調整總樓層數';
+      }
+      for (const cfg of floorConfigs) {
+        if (cfg.roomCount < 0) newErrors[`floor_${cfg.floor}`] = '房間數不可小於 0';
+        if (cfg.monthlyRent < 0) newErrors[`floor_${cfg.floor}`] = '月租金不可為負';
+        if (cfg.depositAmount < 0) newErrors[`floor_${cfg.floor}`] = '押金不可為負';
+        if (cfg.electricityPrice < 0) newErrors[`floor_${cfg.floor}`] = '電費單價不可為負';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -99,7 +178,10 @@ export default function PropertyForm({
 
     setIsSubmitting(true);
     try {
-      await onSubmit(formData);
+      await onSubmit({
+        ...formData,
+        floorConfigs,
+      });
       onClose();
     } catch (error) {
       console.error('提交表單錯誤:', error);
@@ -128,6 +210,12 @@ export default function PropertyForm({
   const formatCurrencyInput = (value: string): number => {
     const num = parseInt(value.replace(/[^0-9]/g, ''), 10);
     return isNaN(num) ? 0 : num;
+  };
+
+  const handleFloorConfigChange = (floor: number, patch: Partial<FloorConfig>) => {
+    setFloorConfigs((prev) =>
+      prev.map((cfg) => (cfg.floor === floor ? { ...cfg, ...patch } : cfg))
+    );
   };
 
   return (
@@ -197,6 +285,11 @@ export default function PropertyForm({
                 className={errors['totalFloors'] ? 'border-destructive' : ''}
                 required
               />
+              {!isEditing && (
+                <p className="text-xs text-gray-500">
+                  將依每層設定自動建立房間，共預計建立 <span className="font-medium">{totalAutoRooms}</span> 間
+                </p>
+              )}
             </div>
 
             {/* 房東姓名 */}
@@ -318,6 +411,84 @@ export default function PropertyForm({
               />
             </div>
           </div>
+
+          {/* 自動建立房間（每層設定） */}
+          {!isEditing && (
+            <div className="space-y-3 pb-2">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium">自動建立房間（每層設定）</div>
+                <div className="text-xs text-gray-500">房號規則：樓層×100 + 序號（例：201）</div>
+              </div>
+              {errors['floorConfigs'] && (
+                <div className="text-destructive text-xs">{errors['floorConfigs']}</div>
+              )}
+
+              <div className="space-y-2">
+                {floorConfigs.map((cfg) => (
+                  <div key={cfg.floor} className="grid grid-cols-1 md:grid-cols-4 gap-3 rounded-md border p-3 bg-white">
+                    <div className="md:col-span-1 flex items-center justify-between">
+                      <div className="font-medium">{cfg.floor}F</div>
+                      <div className="text-xs text-gray-500">
+                        例：{cfg.floor * 100 + 1}~{cfg.floor * 100 + Math.max(0, cfg.roomCount)}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">房間數</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={cfg.roomCount}
+                        onChange={(e) =>
+                          handleFloorConfigChange(cfg.floor, { roomCount: parseInt(e.target.value) || 0 })
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">月租金（元）</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={cfg.monthlyRent}
+                        onChange={(e) =>
+                          handleFloorConfigChange(cfg.floor, { monthlyRent: parseInt(e.target.value) || 0 })
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">押金（元）</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={cfg.depositAmount}
+                        onChange={(e) =>
+                          handleFloorConfigChange(cfg.floor, { depositAmount: parseInt(e.target.value) || 0 })
+                        }
+                      />
+                    </div>
+
+                    <div className="space-y-1 md:col-span-4">
+                      <Label className="text-xs">電費單價（元/度）</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={cfg.electricityPrice}
+                        onChange={(e) =>
+                          handleFloorConfigChange(cfg.floor, { electricityPrice: parseFloat(e.target.value) || 0 })
+                        }
+                      />
+                      <p className="text-xs text-gray-500">
+                        送出時會自動換算為後端 `electricityRate`（分），例：3.5 元 → 350
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <DialogFooter className="mt-6">
             <Button
