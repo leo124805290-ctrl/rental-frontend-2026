@@ -9,6 +9,7 @@ import { Plus, Edit, Trash2, Building, MapPin, Phone, Calendar } from 'lucide-re
 import { formatCurrency, formatDate } from '@/lib/utils';
 import PropertyForm, { type PropertyFormData, type PropertyFormSubmitData } from './components/property-form';
 import { api } from '@/lib/api-client';
+import Link from 'next/link';
 
 // 模擬物業資料類型
 interface Property {
@@ -299,7 +300,7 @@ export default function PropertiesPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-between pt-4">
+                <div className="flex justify-between gap-2 pt-4">
                   <Button
                     variant="outline"
                     size="sm"
@@ -308,6 +309,15 @@ export default function PropertiesPage() {
                     <Edit className="h-4 w-4 mr-2" />
                     編輯
                   </Button>
+                  <Link href={`/properties/${property.id}`} className="flex-1">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="w-full"
+                    >
+                      房間管理
+                    </Button>
+                  </Link>
                   <Button
                     variant="outline"
                     size="sm"

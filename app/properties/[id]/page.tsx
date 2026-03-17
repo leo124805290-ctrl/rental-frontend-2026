@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,9 @@ import { Building, MapPin, Phone, Calendar, Home, Users, Plus, Edit, Trash2, Arr
 import Link from 'next/link';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 // 模擬物業資料類型
 interface Property {
@@ -40,25 +43,45 @@ interface Room {
   status: 'vacant' | 'occupied' | 'reserved' | 'maintenance';
   createdAt: string;
   updatedAt: string;
+  tenantName?: string | null;
 }
 
 // 房間狀態對應的標籤和顏色
 const roomStatusConfig = {
-  vacant: { label: '空房', color: 'bg-green-100 text-green-800 border-green-200' },
-  occupied: { label: '已入住', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+  vacant: { label: '空房', color: 'bg-gray-100 text-gray-800 border-gray-200' },
+  occupied: { label: '已入住', color: 'bg-green-100 text-green-800 border-green-200' },
   reserved: { label: '已預訂', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
   maintenance: { label: '維修中', color: 'bg-red-100 text-red-800 border-red-200' },
 };
 
+interface RoomFormData {
+  roomNumber: string;
+  floor: number;
+  monthlyRent: number;
+  depositAmount: number;
+  electricityPrice: number; // 元/度，送出時轉 electricityRate(分)
+}
+
 export default function PropertyDetailPage() {
   const params = useParams();
   const propertyId = params?.['id'] as string;
+  const router = useRouter();
   
   const [property, setProperty] = useState<Property | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [, setShowRoomForm] = useState(false);
+  const [roomFormOpen, setRoomFormOpen] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [roomFormData, setRoomFormData] = useState<RoomFormData>({
+    roomNumber: '',
+    floor: 1,
+    monthlyRent: 0,
+    depositAmount: 0,
+    electricityPrice: 3.5,
+  });
+  const [savingRoom, setSavingRoom] = useState(false);
+  const [savingStatusRoomId, setSavingStatusRoomId] = useState<string | null>(null);
 
   // 載入物業詳情和房間列表
   useEffect(() => {
@@ -85,25 +108,98 @@ export default function PropertyDetailPage() {
   };
 
   const handleAddRoom = () => {
-    setShowRoomForm(true);
+    setEditingRoom(null);
+    setRoomFormData({
+      roomNumber: '',
+      floor: 1,
+      monthlyRent: 0,
+      depositAmount: 0,
+      electricityPrice: 3.5,
+    });
+    setRoomFormOpen(true);
   };
 
   const handleEditRoom = (room: Room) => {
-    alert(`編輯房間：${room.roomNumber}`);
+    setEditingRoom(room);
+    setRoomFormData({
+      roomNumber: room.roomNumber,
+      floor: room.floor,
+      monthlyRent: room.monthlyRent,
+      depositAmount: room.depositAmount,
+      electricityPrice: room.electricityRate / 100,
+    });
+    setRoomFormOpen(true);
   };
 
-  const handleDeleteRoom = (room: Room) => {
+  const handleDeleteRoom = async (room: Room) => {
     if (confirm(`確定要刪除房間 ${room.roomNumber} 嗎？`)) {
-      alert(`已刪除房間：${room.roomNumber}`);
-      // 實際開發時這裡會呼叫 API 刪除
+      try {
+        await api.delete(`/api/rooms/${room.id}`);
+        setRooms(prev => prev.filter(r => r.id !== room.id));
+      } catch (err) {
+        console.error('刪除房間失敗', err);
+        alert('刪除失敗，請稍後再試');
+      }
     }
   };
 
-  const handleRoomStatusChange = (roomId: string, newStatus: Room['status']) => {
-    setRooms(prev => prev.map(room => 
-      room.id === roomId ? { ...room, status: newStatus } : room
-    ));
-    alert(`房間狀態已更新為：${roomStatusConfig[newStatus].label}`);
+  const handleRoomStatusChange = async (roomId: string, newStatus: Room['status']) => {
+    setSavingStatusRoomId(roomId);
+    try {
+      const updated = await api.patch<Room>(`/api/rooms/${roomId}/status`, { status: newStatus });
+      setRooms(prev => prev.map(room => 
+        room.id === roomId ? updated : room
+      ));
+    } catch (err) {
+      console.error('更新房間狀態失敗', err);
+      alert('更新狀態失敗，請稍後再試');
+    } finally {
+      setSavingStatusRoomId(null);
+    }
+  };
+
+  const handleRoomFormChange = (field: keyof RoomFormData, value: string | number) => {
+    setRoomFormData(prev => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleSubmitRoomForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!propertyId) return;
+
+    const payload = {
+      propertyId,
+      roomNumber: roomFormData.roomNumber.trim(),
+      floor: Number(roomFormData.floor || 1),
+      monthlyRent: Number(roomFormData.monthlyRent || 0),
+      depositAmount: Number(roomFormData.depositAmount || 0),
+      electricityRate: Math.round(Number(roomFormData.electricityPrice || 0) * 100),
+      status: editingRoom?.status ?? 'vacant',
+    };
+
+    if (!payload.roomNumber) {
+      alert('請輸入房號');
+      return;
+    }
+
+    setSavingRoom(true);
+    try {
+      if (editingRoom) {
+        const updated = await api.put<Room>(`/api/rooms/${editingRoom.id}`, payload);
+        setRooms(prev => prev.map(r => (r.id === editingRoom.id ? updated : r)));
+      } else {
+        const created = await api.post<Room>('/api/rooms', payload);
+        setRooms(prev => [...prev, created]);
+      }
+      setRoomFormOpen(false);
+    } catch (err) {
+      console.error('儲存房間失敗', err);
+      alert('儲存房間失敗，請稍後再試');
+    } finally {
+      setSavingRoom(false);
+    }
   };
 
   if (isLoading) {
@@ -209,6 +305,8 @@ export default function PropertyDetailPage() {
   const monthlyRentIncome = rooms
     .filter(r => r.status === 'occupied' || r.status === 'reserved')
     .reduce((sum, room) => sum + room.monthlyRent, 0);
+
+  const occupancyRate = roomStats.total ? Math.round((roomStats.occupied / roomStats.total) * 100) : 0;
 
   return (
     <div className="container mx-auto py-8">
@@ -335,6 +433,13 @@ export default function PropertyDetailPage() {
                 </div>
                 <Separator />
                 <div className="flex justify-between items-center pt-2">
+                  <span className="text-gray-600">入住率</span>
+                  <span className="font-bold text-gray-900">
+                    {roomStats.total ? `${occupancyRate}%` : '—'}
+                  </span>
+                </div>
+                <Separator />
+                <div className="flex justify-between items-center pt-2">
                   <span className="text-gray-600">月租金總收入</span>
                   <span className="font-bold text-green-700">
                     {formatCurrency(monthlyRentIncome)}
@@ -412,9 +517,17 @@ export default function PropertyDetailPage() {
                           {(room.electricityRate / 100).toFixed(2)} 元/度
                         </span>
                       </div>
+                      {room.status === 'occupied' && room.tenantName && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-gray-600">租客</span>
+                          <span className="font-medium text-gray-900">
+                            {room.tenantName}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <Button
                         variant="outline"
                         size="sm"
@@ -423,6 +536,17 @@ export default function PropertyDetailPage() {
                         <Edit className="h-4 w-4 mr-2" />
                         編輯
                       </Button>
+                      {room.status === 'vacant' && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() =>
+                            router.push(`/tenants?propertyId=${propertyId}&roomId=${room.id}`)
+                          }
+                        >
+                          安排入住
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"
@@ -445,7 +569,7 @@ export default function PropertyDetailPage() {
                             variant={room.status === status ? "default" : "outline"}
                             className={`text-xs ${room.status === status ? '' : 'text-gray-600'}`}
                             onClick={() => handleRoomStatusChange(room.id, status as Room['status'])}
-                            disabled={room.status === status}
+                            disabled={room.status === status || !!savingStatusRoomId}
                           >
                             {config.label}
                           </Button>
@@ -463,6 +587,101 @@ export default function PropertyDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* 房間新增/編輯 Dialog */}
+      <Dialog open={roomFormOpen} onOpenChange={setRoomFormOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingRoom ? '編輯房間' : '新增房間'}</DialogTitle>
+            <DialogDescription>
+              請輸入房號、樓層與租金相關資訊，電費單價以「元/度」輸入。
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmitRoomForm}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="roomNumber">房號</Label>
+                <Input
+                  id="roomNumber"
+                  value={roomFormData.roomNumber}
+                  onChange={(e) => handleRoomFormChange('roomNumber', e.target.value)}
+                  placeholder="例如：101"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="floor">樓層</Label>
+                <Input
+                  id="floor"
+                  type="number"
+                  min={1}
+                  value={roomFormData.floor}
+                  onChange={(e) =>
+                    handleRoomFormChange('floor', parseInt(e.target.value) || 1)
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="monthlyRent">月租金（元）</Label>
+                <Input
+                  id="monthlyRent"
+                  type="number"
+                  min={0}
+                  value={roomFormData.monthlyRent}
+                  onChange={(e) =>
+                    handleRoomFormChange('monthlyRent', parseInt(e.target.value) || 0)
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="depositAmount">押金（元）</Label>
+                <Input
+                  id="depositAmount"
+                  type="number"
+                  min={0}
+                  value={roomFormData.depositAmount}
+                  onChange={(e) =>
+                    handleRoomFormChange('depositAmount', parseInt(e.target.value) || 0)
+                  }
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="electricityPrice">電費單價（元/度）</Label>
+                <Input
+                  id="electricityPrice"
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={roomFormData.electricityPrice}
+                  onChange={(e) =>
+                    handleRoomFormChange(
+                      'electricityPrice',
+                      parseFloat(e.target.value) || 0
+                    )
+                  }
+                />
+                <p className="text-xs text-gray-500">
+                  送出時會自動轉換為後端的 electricityRate（分），例如 3.5 元 → 350。
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRoomFormOpen(false)}
+                disabled={savingRoom}
+              >
+                取消
+              </Button>
+              <Button type="submit" disabled={savingRoom}>
+                {savingRoom ? '儲存中...' : '儲存'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

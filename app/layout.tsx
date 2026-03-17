@@ -9,6 +9,7 @@ import { LayoutDashboard, Building, Users, CreditCard, Gauge, LogOut, TrendingDo
 const navItems = [
   { href: '/dashboard', label: '儀表板', icon: LayoutDashboard },
   { href: '/properties', label: '物業管理', icon: Building },
+  { href: '/rooms', label: '房間管理', icon: Home },
   { href: '/tenants', label: '租客管理', icon: Users },
   { href: '/payments', label: '收租管理', icon: CreditCard },
   { href: '/meter-readings', label: '抄電錶', icon: Gauge },
