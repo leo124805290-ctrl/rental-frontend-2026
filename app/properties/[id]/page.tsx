@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -77,8 +77,6 @@ interface CheckinFormData {
 export default function PropertyDetailPage() {
   const params = useParams();
   const propertyId = params?.['id'] as string;
-  const router = useRouter();
-  
   const [property, setProperty] = useState<Property | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [isLoading, setIsLoading] = useState(true);
