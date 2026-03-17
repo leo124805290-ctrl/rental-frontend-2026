@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, Trash2, Building, MapPin, Phone, Calendar } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import PropertyForm from './components/property-form';
+import PropertyForm, { type PropertyFormData } from './components/property-form';
 import { api } from '@/lib/api-client';
 
 // 模擬物業資料類型
@@ -310,9 +310,9 @@ export default function PropertiesPage() {
         onClose={() => setFormOpen(false)}
         onSubmit={handleSubmitProperty}
         isEditing={!!editingProperty}
-        initialData={
-          editingProperty
-            ? {
+        {...(editingProperty
+          ? {
+              initialData: {
                 name: editingProperty.name,
                 address: editingProperty.address,
                 totalFloors: editingProperty.totalFloors,
@@ -321,11 +321,15 @@ export default function PropertiesPage() {
                 landlordDeposit: editingProperty.landlordDeposit,
                 landlordMonthlyRent: editingProperty.landlordMonthlyRent,
                 prepaidPeriod: editingProperty.prepaidPeriod,
-                contractStartDate: editingProperty.contractStartDate ? editingProperty.contractStartDate.split('T')[0] : '',
-                contractEndDate: editingProperty.contractEndDate ? editingProperty.contractEndDate.split('T')[0] : '',
-              }
-            : undefined
-        }
+                ...(editingProperty.contractStartDate
+                  ? { contractStartDate: editingProperty.contractStartDate.split('T')[0] }
+                  : {}),
+                ...(editingProperty.contractEndDate
+                  ? { contractEndDate: editingProperty.contractEndDate.split('T')[0] }
+                  : {}),
+              } satisfies Partial<PropertyFormData>,
+            }
+          : {})}
       />
     </div>
   );

@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 
 // 物業資料類型
-interface PropertyFormData {
+export interface PropertyFormData {
   name: string;
   address: string;
   totalFloors: number;

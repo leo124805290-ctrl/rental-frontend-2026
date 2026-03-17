@@ -37,6 +37,8 @@ interface Room {
   roomNumber: string;
   floor: number;
   status: string;
+  monthlyRent: number;
+  depositAmount: number;
 }
 
 // 物業資料類型
@@ -134,10 +136,10 @@ export default function TenantsPage() {
 
       // 模擬房間資料
       const mockRooms: Record<string, Room> = {
-        'room-1': { id: 'room-1', propertyId: 'property-1', roomNumber: '101', floor: 1, status: 'occupied' },
-        'room-2': { id: 'room-2', propertyId: 'property-1', roomNumber: '102', floor: 1, status: 'vacant' },
-        'room-3': { id: 'room-3', propertyId: 'property-1', roomNumber: '201', floor: 2, status: 'occupied' },
-        'room-5': { id: 'room-5', propertyId: 'property-2', roomNumber: '301', floor: 3, status: 'occupied' },
+        'room-1': { id: 'room-1', propertyId: 'property-1', roomNumber: '101', floor: 1, status: 'occupied', monthlyRent: 18000, depositAmount: 18000 },
+        'room-2': { id: 'room-2', propertyId: 'property-1', roomNumber: '102', floor: 1, status: 'vacant', monthlyRent: 17000, depositAmount: 17000 },
+        'room-3': { id: 'room-3', propertyId: 'property-1', roomNumber: '201', floor: 2, status: 'occupied', monthlyRent: 19000, depositAmount: 19000 },
+        'room-5': { id: 'room-5', propertyId: 'property-2', roomNumber: '301', floor: 3, status: 'occupied', monthlyRent: 16000, depositAmount: 16000 },
       };
 
       // 模擬物業資料
