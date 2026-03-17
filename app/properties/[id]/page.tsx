@@ -194,7 +194,7 @@ export default function PropertyDetailPage() {
       nameVi: '',
       phone: '',
       passportNumber: '',
-      checkInDate: new Date().toISOString().split('T')[0],
+      checkInDate: new Date().toISOString().split('T')[0] ?? '',
       paymentType: 'full',
       paymentAmount: 0,
     });
