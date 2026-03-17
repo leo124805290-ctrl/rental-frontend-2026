@@ -286,12 +286,15 @@ export default function ReportsPage() {
               {activeTab === 'monthly' && (
                 <div className="space-y-2">
                   <Label htmlFor="property">物業</Label>
-                  <Select value={selectedProperty} onValueChange={setSelectedProperty}>
+                  <Select
+                    value={selectedProperty || '__none__'}
+                    onValueChange={(value) => setSelectedProperty(value === '__none__' ? '' : value)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="選擇物業" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">請選擇物業</SelectItem>
+                      <SelectItem value="__none__">請選擇物業</SelectItem>
                       {properties.map(property => (
                         <SelectItem key={property.id} value={property.id}>
                           {property.name}

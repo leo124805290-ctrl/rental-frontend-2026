@@ -668,15 +668,15 @@ export default function ExpensesPage() {
               <div className="space-y-2">
                 <Label htmlFor="roomId">房間（選填）</Label>
                 <Select 
-                  value={formData.roomId || ''} 
-                  onValueChange={(value) => setFormData({...formData, roomId: value || null})}
+                  value={formData.roomId || '__public__'} 
+                  onValueChange={(value) => setFormData({...formData, roomId: value === '__public__' ? null : value})}
                   disabled={!formData.propertyId}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="選擇房間" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">公共區域</SelectItem>
+                    <SelectItem value="__public__">公共區域</SelectItem>
                     {rooms
                       .filter(room => room.propertyId === formData.propertyId)
                       .map(room => (

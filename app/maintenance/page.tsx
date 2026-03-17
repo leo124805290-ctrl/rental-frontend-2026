@@ -705,15 +705,15 @@ export default function MaintenancePage() {
               <div className="space-y-2">
                 <Label htmlFor="roomId">房間（選填）</Label>
                 <Select 
-                  value={formData.roomId || ''} 
-                  onValueChange={(value) => setFormData({...formData, roomId: value || null})}
+                  value={formData.roomId || '__public__'} 
+                  onValueChange={(value) => setFormData({...formData, roomId: value === '__public__' ? null : value})}
                   disabled={!formData.propertyId}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="選擇房間" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">公共區域</SelectItem>
+                    <SelectItem value="__public__">公共區域</SelectItem>
                     {rooms
                       .filter(room => room.propertyId === formData.propertyId)
                       .map(room => (
@@ -789,14 +789,14 @@ export default function MaintenancePage() {
               <div className="space-y-2">
                 <Label htmlFor="assignedTo">指派給（選填）</Label>
                 <Select 
-                  value={formData.assignedTo || ''} 
-                  onValueChange={(value) => setFormData({...formData, assignedTo: value || null})}
+                  value={formData.assignedTo || '__unassigned__'} 
+                  onValueChange={(value) => setFormData({...formData, assignedTo: value === '__unassigned__' ? null : value})}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="選擇負責人" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">未指派</SelectItem>
+                    <SelectItem value="__unassigned__">未指派</SelectItem>
                     {users.map(user => (
                       <SelectItem key={user.id} value={user.id}>
                         {user.name}

@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Building, User, Phone, Calendar, Plus, Search, Filter } from 'lucide-react';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
+import CheckinModal from './components/checkin-modal';
+import { api } from '@/lib/api-client';
 
 // 租客資料類型
 interface Tenant {
@@ -49,6 +51,7 @@ export default function TenantsPage() {
   const [properties, setProperties] = useState<Record<string, Property>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checkinOpen, setCheckinOpen] = useState(false);
   
   // 篩選狀態
   const [searchTerm, setSearchTerm] = useState('');
@@ -180,8 +183,45 @@ export default function TenantsPage() {
     return true;
   });
 
-  const handleCheckin = () => {
-    alert('入住功能開發中');
+  const handleCheckin = () => setCheckinOpen(true);
+
+  const handleSubmitCheckin = async (data: any) => {
+    // 先求「能用」：優先本地更新；如果後端有端點，再嘗試送出
+    try {
+      // 後端若已提供入住 API，可在此替換成正確 endpoint
+      // await api.post('/api/tenants/checkin', data);
+      void api; // 保留 import，避免未使用
+    } catch (e) {
+      console.warn('入住 API 送出失敗（先以本地資料更新）', e);
+    }
+
+    const newTenant: Tenant = {
+      id: `tenant-${Date.now()}`,
+      roomId: data.roomId,
+      propertyId: data.propertyId || rooms[data.roomId]?.propertyId || 'unknown',
+      nameZh: data.nameZh,
+      nameVi: data.nameVi,
+      phone: data.phone,
+      passportNumber: data.passportNumber || undefined,
+      checkInDate: new Date().toISOString(),
+      status: 'active',
+      notes: data.notes || undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setTenants((prev) => [newTenant, ...prev]);
+    setRooms((prev) => {
+      const room = prev[data.roomId];
+      if (!room) return prev;
+      // full: occupied，partial/deposit_only: reserved
+      const nextStatus =
+        data.paymentType === 'full' ? 'occupied' : 'reserved';
+      return {
+        ...prev,
+        [data.roomId]: { ...room, status: nextStatus },
+      };
+    });
   };
 
   if (isLoading) {
@@ -448,6 +488,13 @@ export default function TenantsPage() {
           已退租：{tenants.filter(t => t.status === 'checked_out').length} 位
         </p>
       </div>
+
+      <CheckinModal
+        isOpen={checkinOpen}
+        onClose={() => setCheckinOpen(false)}
+        onSubmit={handleSubmitCheckin}
+        rooms={Object.values(rooms)}
+      />
     </div>
   );
 }

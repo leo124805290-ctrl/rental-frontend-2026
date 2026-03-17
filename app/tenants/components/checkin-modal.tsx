@@ -255,7 +255,7 @@ export default function CheckinModal({
                   </SelectTrigger>
                   <SelectContent>
                     {availableRooms.length === 0 ? (
-                      <SelectItem value="" disabled>暫無空房</SelectItem>
+                      <SelectItem value="__none__" disabled>暫無空房</SelectItem>
                     ) : (
                       availableRooms.map(room => (
                         <SelectItem key={room.id} value={room.id}>

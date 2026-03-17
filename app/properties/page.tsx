@@ -6,6 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, Trash2, Building, MapPin, Phone, Calendar } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import PropertyForm from './components/property-form';
+import { api } from '@/lib/api-client';
 
 // 模擬物業資料類型
 interface Property {
@@ -28,6 +30,8 @@ export default function PropertiesPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
 
   // 載入物業資料
   useEffect(() => {
@@ -39,11 +43,12 @@ export default function PropertiesPage() {
     setError(null);
 
     try {
-      // 模擬 API 請求延遲
-      await new Promise(resolve => setTimeout(resolve, 800));
-
-      // 模擬資料
-      const mockProperties: Property[] = [
+      const data = await api.get<Property[]>('/api/properties');
+      setProperties(data);
+    } catch (err) {
+      console.warn('載入物業 API 失敗，使用模擬資料', err);
+      // 模擬資料（當後端尚未提供或暫時不可用時）
+      setProperties([
         {
           id: '1',
           name: '台北市信義區公寓',
@@ -59,59 +64,62 @@ export default function PropertiesPage() {
           createdAt: '2026-01-01T00:00:00.000Z',
           updatedAt: '2026-03-14T10:30:00.000Z',
         },
-        {
-          id: '2',
-          name: '新北市中和區華廈',
-          address: '新北市中和區中山路二段',
-          totalFloors: 8,
-          landlordName: '李小姐',
-          landlordPhone: '0987-654-321',
-          landlordDeposit: 80000,
-          landlordMonthlyRent: 40000,
-          prepaidPeriod: 2,
-          contractStartDate: '2026-02-01T00:00:00.000Z',
-          contractEndDate: '2027-01-31T23:59:59.999Z',
-          createdAt: '2026-02-01T00:00:00.000Z',
-          updatedAt: '2026-03-14T11:15:00.000Z',
-        },
-        {
-          id: '3',
-          name: '桃園市中壢區透天厝',
-          address: '桃園市中壢區中園路',
-          totalFloors: 3,
-          landlordName: '王先生',
-          landlordPhone: '0933-222-111',
-          landlordDeposit: 100000,
-          landlordMonthlyRent: 50000,
-          prepaidPeriod: 6,
-          contractStartDate: '2026-03-01T00:00:00.000Z',
-          contractEndDate: '2027-02-28T23:59:59.999Z',
-          createdAt: '2026-03-01T00:00:00.000Z',
-          updatedAt: '2026-03-14T12:45:00.000Z',
-        },
-      ];
-
-      setProperties(mockProperties);
-    } catch (err) {
-      setError('載入物業資料失敗，請稍後再試');
-      console.error('載入物業錯誤:', err);
+      ]);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleAddProperty = () => {
-    alert('新增物業功能開發中');
+    setEditingProperty(null);
+    setFormOpen(true);
   };
 
   const handleEditProperty = (property: Property) => {
-    alert(`編輯物業：${property.name}`);
+    setEditingProperty(property);
+    setFormOpen(true);
   };
 
   const handleDeleteProperty = (property: Property) => {
     if (confirm(`確定要刪除「${property.name}」嗎？`)) {
-      alert(`已刪除物業：${property.name}`);
-      // 實際開發時這裡會呼叫 API 刪除
+      (async () => {
+        try {
+          await api.delete(`/api/properties/${property.id}`);
+          setProperties((prev) => prev.filter((p) => p.id !== property.id));
+        } catch (err) {
+          console.error('刪除物業失敗', err);
+          alert('刪除失敗，請稍後再試');
+        }
+      })();
+    }
+  };
+
+  const handleSubmitProperty = async (data: any) => {
+    // PropertyForm 使用的是表單資料（非後端格式），這裡做最小映射
+    const payload = {
+      name: data.name,
+      address: data.address,
+      totalFloors: Number(data.totalFloors || 1),
+      landlordName: data.landlordName,
+      landlordPhone: data.landlordPhone,
+      landlordDeposit: Number(data.landlordDeposit || 0),
+      landlordMonthlyRent: Number(data.landlordMonthlyRent || 0),
+      prepaidPeriod: Number(data.prepaidPeriod || 1),
+      contractStartDate: data.contractStartDate ? new Date(data.contractStartDate).toISOString() : null,
+      contractEndDate: data.contractEndDate ? new Date(data.contractEndDate).toISOString() : null,
+    };
+
+    try {
+      if (editingProperty) {
+        const updated = await api.put<Property>(`/api/properties/${editingProperty.id}`, payload);
+        setProperties((prev) => prev.map((p) => (p.id === editingProperty.id ? updated : p)));
+      } else {
+        const created = await api.post<Property>('/api/properties', payload);
+        setProperties((prev) => [created, ...prev]);
+      }
+    } catch (err) {
+      console.error('儲存物業失敗', err);
+      alert('儲存失敗，請稍後再試');
     }
   };
 
@@ -296,6 +304,29 @@ export default function PropertiesPage() {
       <div className="mt-8 text-center text-sm text-gray-500">
         <p>共 {properties.length} 個物業 • 系統建置中 v2.0</p>
       </div>
+
+      <PropertyForm
+        isOpen={formOpen}
+        onClose={() => setFormOpen(false)}
+        onSubmit={handleSubmitProperty}
+        isEditing={!!editingProperty}
+        initialData={
+          editingProperty
+            ? {
+                name: editingProperty.name,
+                address: editingProperty.address,
+                totalFloors: editingProperty.totalFloors,
+                landlordName: editingProperty.landlordName,
+                landlordPhone: editingProperty.landlordPhone,
+                landlordDeposit: editingProperty.landlordDeposit,
+                landlordMonthlyRent: editingProperty.landlordMonthlyRent,
+                prepaidPeriod: editingProperty.prepaidPeriod,
+                contractStartDate: editingProperty.contractStartDate ? editingProperty.contractStartDate.split('T')[0] : '',
+                contractEndDate: editingProperty.contractEndDate ? editingProperty.contractEndDate.split('T')[0] : '',
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

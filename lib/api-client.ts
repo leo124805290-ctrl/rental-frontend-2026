@@ -108,17 +108,6 @@ async function request<T = any>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<{ data: T; status: number; headers: Headers }> {
-  // 連線狀態檢查
-  const connectionStatus = await checkConnectionStatus();
-  if (connectionStatus !== 'success') {
-    throw new ApiError(
-      connectionStatus === 'offline' ? '網路連線中斷' :
-      connectionStatus === 'timeout' ? '伺服器回應超時' :
-      '伺服器連線錯誤',
-      0
-    );
-  }
-
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
