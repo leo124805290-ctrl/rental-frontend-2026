@@ -24,7 +24,8 @@ interface Room {
   monthlyRent: number;
   depositAmount: number;
   electricityRate: number;
-  status: RoomStatus;
+  status: RoomStatus | string;
+  deletedAt?: string | null;
 }
 
 const roomStatusConfig: Record<RoomStatus, { label: string; color: string }> = {
@@ -201,9 +202,16 @@ export default function RoomsPage() {
                       {propertyMap.get(room.propertyId) || '未知物業'} · {room.floor} 樓
                     </div>
                   </div>
-                  <Badge className={roomStatusConfig[room.status].color}>
-                    {roomStatusConfig[room.status].label}
-                  </Badge>
+                  {(() => {
+                    const meta =
+                      roomStatusConfig[room.status as RoomStatus] ??
+                      roomStatusConfig.vacant;
+                    return (
+                      <Badge className={meta.color}>
+                        {meta.label}
+                      </Badge>
+                    );
+                  })()}
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">

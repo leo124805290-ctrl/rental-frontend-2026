@@ -40,7 +40,7 @@ interface Room {
   monthlyRent: number;
   depositAmount: number;
   electricityRate: number;
-  status: 'vacant' | 'occupied' | 'reserved' | 'maintenance';
+  status: 'vacant' | 'occupied' | 'reserved' | 'maintenance' | string;
   createdAt: string;
   updatedAt: string;
   tenantName?: string | null;
@@ -60,6 +60,18 @@ interface RoomFormData {
   monthlyRent: number;
   depositAmount: number;
   electricityPrice: number; // 元/度，送出時轉 electricityRate(分)
+}
+
+type PaymentType = 'full' | 'partial' | 'deposit_only';
+
+interface CheckinFormData {
+  nameZh: string;
+  nameVi: string;
+  phone: string;
+  passportNumber: string;
+  checkInDate: string;
+  paymentType: PaymentType;
+  paymentAmount: number;
 }
 
 export default function PropertyDetailPage() {
@@ -82,6 +94,18 @@ export default function PropertyDetailPage() {
   });
   const [savingRoom, setSavingRoom] = useState(false);
   const [savingStatusRoomId, setSavingStatusRoomId] = useState<string | null>(null);
+  const [checkinOpen, setCheckinOpen] = useState(false);
+  const [checkinRoom, setCheckinRoom] = useState<Room | null>(null);
+  const [checkinForm, setCheckinForm] = useState<CheckinFormData>({
+    nameZh: '',
+    nameVi: '',
+    phone: '',
+    passportNumber: '',
+    checkInDate: new Date().toISOString().split('T')[0],
+    paymentType: 'full',
+    paymentAmount: 0,
+  });
+  const [savingCheckin, setSavingCheckin] = useState(false);
 
   // 載入物業詳情和房間列表
   useEffect(() => {
@@ -163,6 +187,78 @@ export default function PropertyDetailPage() {
       ...prev,
       [field]: value,
     }));
+  };
+
+  const openCheckinModal = (room: Room) => {
+    setCheckinRoom(room);
+    setCheckinForm({
+      nameZh: '',
+      nameVi: '',
+      phone: '',
+      passportNumber: '',
+      checkInDate: new Date().toISOString().split('T')[0],
+      paymentType: 'full',
+      paymentAmount: 0,
+    });
+    setCheckinOpen(true);
+  };
+
+  const handleCheckinFieldChange = (field: keyof CheckinFormData, value: string | number) => {
+    setCheckinForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleSubmitCheckin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!propertyId || !checkinRoom) return;
+
+    if (!checkinForm.nameZh.trim()) {
+      alert('請輸入租客中文姓名');
+      return;
+    }
+    if (!checkinForm.phone.trim()) {
+      alert('請輸入電話');
+      return;
+    }
+
+    const payload = {
+      roomId: checkinRoom.id,
+      propertyId,
+      nameZh: checkinForm.nameZh.trim(),
+      nameVi: checkinForm.nameVi.trim(),
+      phone: checkinForm.phone.trim(),
+      passportNumber: checkinForm.passportNumber.trim(),
+      checkInDate: checkinForm.checkInDate,
+      paymentType: checkinForm.paymentType,
+      paymentAmount: Number(checkinForm.paymentAmount || 0),
+    };
+
+    setSavingCheckin(true);
+    try {
+      await api.post('/api/checkin/complete', payload);
+
+      const nextStatus: Room['status'] =
+        checkinForm.paymentType === 'full' ? 'occupied' : 'reserved';
+
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.id === checkinRoom.id
+            ? { ...r, status: nextStatus, tenantName: payload.nameZh }
+            : r
+        )
+      );
+
+      alert('入住成功');
+      setCheckinOpen(false);
+      setCheckinRoom(null);
+    } catch (err) {
+      console.error('入住失敗', err);
+      alert('入住失敗，請稍後再試');
+    } finally {
+      setSavingCheckin(false);
+    }
   };
 
   const handleSubmitRoomForm = async (e: React.FormEvent) => {
@@ -492,9 +588,16 @@ export default function PropertyDetailPage() {
                           {room.floor} 樓
                         </CardDescription>
                       </div>
-                      <Badge className={roomStatusConfig[room.status].color}>
-                        {roomStatusConfig[room.status].label}
+                  {(() => {
+                    const meta =
+                      roomStatusConfig[room.status as keyof typeof roomStatusConfig] ??
+                      roomStatusConfig.vacant;
+                    return (
+                      <Badge className={meta.color}>
+                        {meta.label}
                       </Badge>
+                    );
+                  })()}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -540,9 +643,7 @@ export default function PropertyDetailPage() {
                         <Button
                           variant="default"
                           size="sm"
-                          onClick={() =>
-                            router.push(`/tenants?propertyId=${propertyId}&roomId=${room.id}`)
-                          }
+                          onClick={() => openCheckinModal(room)}
                         >
                           安排入住
                         </Button>
@@ -677,6 +778,138 @@ export default function PropertyDetailPage() {
               </Button>
               <Button type="submit" disabled={savingRoom}>
                 {savingRoom ? '儲存中...' : '儲存'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 入住 Dialog */}
+      <Dialog open={checkinOpen} onOpenChange={setCheckinOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>安排入住{checkinRoom ? `－${checkinRoom.roomNumber} 號房` : ''}</DialogTitle>
+            <DialogDescription>
+              請填寫租客資料與付款方式，送出後會建立入住紀錄並更新房間狀態。
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmitCheckin}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="nameZh">租客姓名（中文）</Label>
+                <Input
+                  id="nameZh"
+                  value={checkinForm.nameZh}
+                  onChange={(e) => handleCheckinFieldChange('nameZh', e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="nameVi">租客姓名（越南文）</Label>
+                <Input
+                  id="nameVi"
+                  value={checkinForm.nameVi}
+                  onChange={(e) => handleCheckinFieldChange('nameVi', e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">電話</Label>
+                <Input
+                  id="phone"
+                  value={checkinForm.phone}
+                  onChange={(e) => handleCheckinFieldChange('phone', e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="passportNumber">護照／居留證號碼</Label>
+                <Input
+                  id="passportNumber"
+                  value={checkinForm.passportNumber}
+                  onChange={(e) =>
+                    handleCheckinFieldChange('passportNumber', e.target.value)
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="checkInDate">入住日期</Label>
+                <Input
+                  id="checkInDate"
+                  type="date"
+                  value={checkinForm.checkInDate}
+                  onChange={(e) =>
+                    handleCheckinFieldChange('checkInDate', e.target.value)
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>付款方式</Label>
+                <div className="grid grid-cols-1 gap-2 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="paymentType"
+                      value="full"
+                      checked={checkinForm.paymentType === 'full'}
+                      onChange={() => handleCheckinFieldChange('paymentType', 'full')}
+                    />
+                    <span>全額付清（押金 + 首月租金）</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="paymentType"
+                      value="partial"
+                      checked={checkinForm.paymentType === 'partial'}
+                      onChange={() => handleCheckinFieldChange('paymentType', 'partial')}
+                    />
+                    <span>部分付款</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="paymentType"
+                      value="deposit_only"
+                      checked={checkinForm.paymentType === 'deposit_only'}
+                      onChange={() =>
+                        handleCheckinFieldChange('paymentType', 'deposit_only')
+                      }
+                    />
+                    <span>僅付押金</span>
+                  </label>
+                </div>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="paymentAmount">付款金額（元）</Label>
+                <Input
+                  id="paymentAmount"
+                  type="number"
+                  min={0}
+                  value={checkinForm.paymentAmount}
+                  onChange={(e) =>
+                    handleCheckinFieldChange(
+                      'paymentAmount',
+                      parseInt(e.target.value) || 0
+                    )
+                  }
+                />
+                <p className="text-xs text-gray-500">
+                  依選擇的付款方式輸入實際收款金額。全額付清時可輸入押金＋首月租金總和。
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCheckinOpen(false)}
+                disabled={savingCheckin}
+              >
+                取消
+              </Button>
+              <Button type="submit" disabled={savingCheckin || !checkinRoom}>
+                {savingCheckin ? '入住處理中...' : '確認入住'}
               </Button>
             </DialogFooter>
           </form>
