@@ -4,9 +4,13 @@
  */
 
 // 基礎 API URL
-// 生產環境走同源 `/api/*`（由 Vercel/Next.js rewrites 代理到 Zeabur），避免瀏覽器 CORS 擋住跨網域請求。
-// @ts-ignore - process.env 由 Next.js 提供
-const API_BASE_URL = '';
+// 瀏覽器端優先走同源 `/api/*`（由 Next.js rewrites 代理到 Zeabur），避免 CORS。
+// 伺服器端（SSR/Route Handlers）則可直接打到後端網址。
+function getApiBaseUrl(): string {
+  // @ts-ignore - process.env 由 Next.js 提供
+  const envBase = process.env['NEXT_PUBLIC_API_URL'] || 'https://taiwan-landlord-2026.zeabur.app';
+  return typeof window === 'undefined' ? envBase : '';
+}
 
 // 請求逾時時間（毫秒）
 const REQUEST_TIMEOUT = 10000;
@@ -41,7 +45,7 @@ async function checkConnectionStatus(): Promise<ConnectionStatus> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    const response = await fetch(`${API_BASE_URL}/health`, {
+    const response = await fetch(`${getApiBaseUrl()}/health`, {
       signal: controller.signal,
       headers: {
         'Accept': 'application/json',
@@ -122,7 +126,7 @@ async function request<T = any>(
     };
 
     // 發出請求
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       ...options,
       headers,
       signal: controller.signal,
