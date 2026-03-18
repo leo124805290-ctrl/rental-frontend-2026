@@ -19,6 +19,7 @@ import { PageShell } from '@/components/app-shell/page-shell';
 interface Property {
   id: string;
   name: string;
+  status?: 'active' | 'archived' | 'demo' | string;
 }
 
 interface Room {
@@ -117,8 +118,10 @@ export default function PaymentsPage() {
       setError(null);
       try {
         const props = await api.get<Property[]>('/api/properties');
-        setProperties(props);
-        setSelectedPropertyId(props[0]?.id ?? '');
+        // 封存物業不應出現在可操作清單的 property 下拉選單中
+        const allowedProps = props.filter((p) => p.status !== 'archived');
+        setProperties(allowedProps);
+        setSelectedPropertyId(allowedProps[0]?.id ?? '');
       } catch (err) {
         console.error('載入物業失敗', err);
         setError('載入物業失敗，請稍後再試');
