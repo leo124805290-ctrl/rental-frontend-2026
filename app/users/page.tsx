@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -8,14 +7,14 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 // Switch component not available, using Button instead
-import { CalendarIcon, Download, Filter, PlusCircle, User, Users, Shield, Mail, Phone, Lock, CheckCircle, XCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Download, Filter, PlusCircle, User, Users, Shield, Phone, XCircle } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 // 使用者資料類型（與後端 User 類型對應）
 interface UserData {
@@ -289,27 +288,24 @@ export default function UsersPage() {
   };
 
   return (
-    <div className="container mx-auto py-6">
+    <PageShell>
       <div className="flex flex-col space-y-6">
-        {/* 標題區 */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">使用者管理</h1>
-            <p className="text-muted-foreground">
-              管理系統使用者帳號、權限與登入狀態
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button onClick={handleAddUser}>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              新增使用者
-            </Button>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              匯出名單
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          title="使用者管理"
+          description="管理系統使用者帳號、權限與登入狀態"
+          actions={
+            <>
+              <Button onClick={handleAddUser}>
+                <PlusCircle className="mr-2 h-4 w-4" />
+                新增使用者
+              </Button>
+              <Button variant="outline">
+                <Download className="mr-2 h-4 w-4" />
+                匯出名單
+              </Button>
+            </>
+          }
+        />
 
         {/* 統計卡片 */}
         <div className="grid gap-4 md:grid-cols-4">
@@ -540,7 +536,7 @@ export default function UsersPage() {
             )}
           </CardContent>
         </Card>
-      </div>
+      
 
       {/* 新增/編輯使用者對話框 */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
@@ -658,6 +654,7 @@ export default function UsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PageShell>
   );
 }

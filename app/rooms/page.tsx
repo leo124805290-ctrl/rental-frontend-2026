@@ -8,6 +8,8 @@ import { api } from '@/lib/api-client';
 import { formatCurrency } from '@/lib/utils';
 import Link from 'next/link';
 import { Building, Home } from 'lucide-react';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 interface Property {
   id: string;
@@ -87,35 +89,35 @@ export default function RoomsPage() {
   }, [filteredRooms]);
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">房間管理</h1>
-          <p className="text-gray-600 mt-1">跨物業檢視與篩選所有房間</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <select
-            className="h-9 rounded-md border border-gray-300 bg-white px-3 text-sm shadow-sm"
-            value={selectedPropertyId}
-            onChange={(e) => setSelectedPropertyId(e.target.value)}
-          >
-            <option value="all">全部物業</option>
-            {properties.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          {selectedPropertyId !== 'all' && (
-            <Link href={`/properties/${selectedPropertyId}`}>
-              <Button variant="outline" size="sm">
-                <Building className="h-4 w-4 mr-1" />
-                前往物業
-              </Button>
-            </Link>
-          )}
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="房間管理"
+        description="跨物業檢視與篩選所有房間"
+        actions={
+          <div className="flex items-center gap-3">
+            <select
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
+              value={selectedPropertyId}
+              onChange={(e) => setSelectedPropertyId(e.target.value)}
+            >
+              <option value="all">全部物業</option>
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {selectedPropertyId !== 'all' && (
+              <Link href={`/properties/${selectedPropertyId}`}>
+                <Button variant="outline" size="sm">
+                  <Building className="h-4 w-4 mr-1" />
+                  前往物業
+                </Button>
+              </Link>
+            )}
+          </div>
+        }
+      />
 
       {error && (
         <Card className="mb-6 border-red-200 bg-red-50">
@@ -245,7 +247,7 @@ export default function RoomsPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
 

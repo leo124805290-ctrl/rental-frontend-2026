@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -7,12 +6,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Zap, Home, Battery, Calculator, SaveAll, RefreshCw } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 // 模擬房間電錶資料類型
 interface RoomMeter {
@@ -33,7 +33,9 @@ export default function MeterReadingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
-  const [readingDate, setReadingDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [readingDate, setReadingDate] = useState<string>(
+    new Date().toISOString().split('T')[0] ?? ''
+  );
   const [showBatchDialog, setShowBatchDialog] = useState(false);
   const [batchNotes, setBatchNotes] = useState<string>('');
 
@@ -205,27 +207,24 @@ export default function MeterReadingsPage() {
   };
 
   return (
-    <div className="container mx-auto py-6">
+    <PageShell>
       <div className="flex flex-col space-y-6">
-        {/* 標題區 */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">抄電錶管理</h1>
-            <p className="text-muted-foreground">
-              記錄各房間電錶讀數，自動計算用電度數與電費
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button onClick={handleBatchSave}>
-              <SaveAll className="mr-2 h-4 w-4" />
-              批次儲存
-            </Button>
-            <Button variant="outline" onClick={loadMeterData}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              重新整理
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          title="抄電錶管理"
+          description="記錄各房間電錶讀數，自動計算用電度數與電費"
+          actions={
+            <>
+              <Button onClick={handleBatchSave}>
+                <SaveAll className="mr-2 h-4 w-4" />
+                批次儲存
+              </Button>
+              <Button variant="outline" onClick={loadMeterData}>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                重新整理
+              </Button>
+            </>
+          }
+        />
 
         {/* 統計卡片 */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -505,6 +504,6 @@ export default function MeterReadingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

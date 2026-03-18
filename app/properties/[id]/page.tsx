@@ -13,6 +13,8 @@ import { api } from '@/lib/api-client';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageShell } from '@/components/app-shell/page-shell';
+import { PageHeader } from '@/components/app-shell/page-header';
 
 // 模擬物業資料類型
 interface Property {
@@ -298,16 +300,18 @@ export default function PropertyDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex items-center mb-8">
-          <Link href="/properties">
-            <Button variant="outline" size="sm" className="mr-4">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              返回物業列表
-            </Button>
-          </Link>
-          <div className="h-8 bg-gray-200 rounded w-64"></div>
-        </div>
+      <PageShell>
+        <PageHeader
+          title="物業載入中"
+          actions={
+            <Link href="/properties">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                返回物業列表
+              </Button>
+            </Link>
+          }
+        />
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
@@ -352,21 +356,24 @@ export default function PropertyDetailPage() {
             </div>
           </div>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (error || !property) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex items-center mb-8">
-          <Link href="/properties">
-            <Button variant="outline" size="sm" className="mr-4">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              返回物業列表
-            </Button>
-          </Link>
-        </div>
+      <PageShell>
+        <PageHeader
+          title="物業載入失敗"
+          actions={
+            <Link href="/properties">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                返回物業列表
+              </Button>
+            </Link>
+          }
+        />
         
         <Card className="border-red-200 bg-red-50">
           <CardContent className="pt-6">
@@ -382,7 +389,7 @@ export default function PropertyDetailPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     );
   }
 
@@ -403,17 +410,18 @@ export default function PropertyDetailPage() {
   const occupancyRate = roomStats.total ? Math.round((roomStats.occupied / roomStats.total) * 100) : 0;
 
   return (
-    <div className="container mx-auto py-8">
-      {/* 返回按鈕 */}
-      <div className="flex items-center mb-8">
-        <Link href="/properties">
-          <Button variant="outline" size="sm" className="mr-4">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            返回物業列表
-          </Button>
-        </Link>
-        <h1 className="text-3xl font-bold text-gray-900">{property.name}</h1>
-      </div>
+    <PageShell>
+      <PageHeader
+        title={property.name}
+        actions={
+          <Link href="/properties">
+            <Button variant="outline" size="sm">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              返回物業列表
+            </Button>
+          </Link>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* 左側：物業資訊 */}
@@ -913,6 +921,6 @@ export default function PropertyDetailPage() {
           </form>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

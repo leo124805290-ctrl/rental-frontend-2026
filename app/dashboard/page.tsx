@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -6,11 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { TrendingUp, TrendingDown, Home, Users, DollarSign, Clock, AlertCircle, CheckCircle, Wrench, Calendar } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { api } from '@/lib/api-client';
+import { PageShell } from '@/components/app-shell/page-shell';
+import { PageHeader } from '@/components/app-shell/page-header';
 
 // 物業卡片資料類型
 interface PropertyCard {
@@ -53,7 +52,7 @@ interface ChartData {
 }
 
 export default function DashboardPage() {
-  const [propertyCards, setPropertyCards] = useState<PropertyCard[]>([
+  const [propertyCards] = useState<PropertyCard[]>([
     {
       id: '1',
       name: '台北市信義區公寓',
@@ -74,7 +73,7 @@ export default function DashboardPage() {
     },
   ]);
 
-  const [todos, setTodos] = useState<TodoItem[]>([
+  const [todos] = useState<TodoItem[]>([
     {
       id: '1',
       type: 'overdue_payment',
@@ -113,7 +112,7 @@ export default function DashboardPage() {
     },
   ]);
 
-  const [monthlySummary, setMonthlySummary] = useState<MonthlySummary>({
+  const [monthlySummary] = useState<MonthlySummary>({
     totalIncome: 3264300, // 32,643 元
     totalExpense: 1116000, // 11,160 元
     netProfit: 2148300, // 21,483 元
@@ -122,7 +121,7 @@ export default function DashboardPage() {
     expenseTrend: -5.2, // 比上月減少 5.2%
   });
 
-  const [chartData, setChartData] = useState<ChartData[]>([
+  const [chartData] = useState<ChartData[]>([
     { month: '2026-01', 收入: 2850000, 支出: 980000 },
     { month: '2026-02', 收入: 2900000, 支出: 1050000 },
     { month: '2026-03', 收入: 3264300, 支出: 1116000 },
@@ -202,25 +201,20 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      {/* 標題區 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">儀表板</h1>
-          <p className="text-muted-foreground">
-            總覽物業營運狀況、待辦事項與財務表現
-          </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Button variant="outline">
-            <Calendar className="mr-2 h-4 w-4" />
-            本月：2026-03
-          </Button>
-          <Button onClick={loadDashboardData}>
-            重新整理
-          </Button>
-        </div>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="儀表板"
+        description="總覽物業營運狀況、待辦事項與財務表現"
+        actions={
+          <>
+            <Button variant="outline">
+              <Calendar className="mr-2 h-4 w-4" />
+              本月：2026-03
+            </Button>
+            <Button onClick={loadDashboardData}>重新整理</Button>
+          </>
+        }
+      />
 
       {/* 本月摘要 */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -527,6 +521,6 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </PageShell>
   );
 }

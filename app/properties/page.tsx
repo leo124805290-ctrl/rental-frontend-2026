@@ -10,6 +10,8 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import PropertyForm, { type PropertyFormData, type PropertyFormSubmitData } from './components/property-form';
 import { api } from '@/lib/api-client';
 import Link from 'next/link';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 // 模擬物業資料類型
 interface Property {
@@ -149,17 +151,17 @@ export default function PropertiesPage() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">物業管理</h1>
-            <p className="text-gray-600 mt-2">管理您的租屋物業資訊</p>
-          </div>
-          <Button disabled>
-            <Plus className="mr-2 h-4 w-4" />
-            新增物業
-          </Button>
-        </div>
+      <PageShell>
+        <PageHeader
+          title="物業管理"
+          description="管理您的租屋物業資訊"
+          actions={
+            <Button disabled>
+              <Plus className="mr-2 h-4 w-4" />
+              新增物業
+            </Button>
+          }
+        />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3].map((i) => (
             <Card key={i} className="animate-pulse">
@@ -177,22 +179,18 @@ export default function PropertiesPage() {
             </Card>
           ))}
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (error) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">物業管理</h1>
-            <p className="text-gray-600 mt-2">管理您的租屋物業資訊</p>
-          </div>
-          <Button onClick={loadProperties}>
-            重新載入
-          </Button>
-        </div>
+      <PageShell>
+        <PageHeader
+          title="物業管理"
+          description="管理您的租屋物業資訊"
+          actions={<Button onClick={loadProperties}>重新載入</Button>}
+        />
         <Card className="border-red-200 bg-red-50">
           <CardContent className="pt-6">
             <div className="text-center py-8">
@@ -207,22 +205,22 @@ export default function PropertiesPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">物業管理</h1>
-          <p className="text-gray-600 mt-2">管理您的租屋物業資訊</p>
-        </div>
-        <Button onClick={handleAddProperty}>
-          <Plus className="mr-2 h-4 w-4" />
-          新增物業
-        </Button>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="物業管理"
+        description="管理您的租屋物業資訊"
+        actions={
+          <Button onClick={handleAddProperty}>
+            <Plus className="mr-2 h-4 w-4" />
+            新增物業
+          </Button>
+        }
+      />
 
       {properties.length === 0 ? (
         <Card>
@@ -364,6 +362,6 @@ export default function PropertiesPage() {
             }
           : {})}
       />
-    </div>
+    </PageShell>
   );
 }

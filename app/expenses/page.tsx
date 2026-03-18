@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -8,15 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Download, Filter, PlusCircle, Building, Home, DollarSign, CreditCard } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Download, Filter, PlusCircle, Building, DollarSign, CreditCard } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 // 支出資料類型（與後端 Expense 類型對應）
 interface Expense {
@@ -63,25 +60,23 @@ export default function ExpensesPage() {
     type: 'fixed',
     category: 'rent',
     amount: 0,
-    expenseDate: new Date().toISOString().split('T')[0],
+    expenseDate: new Date().toISOString().split('T')[0] ?? '',
     description: '',
     recurring: false,
     recurringPeriod: 'monthly',
   });
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
-  
   // 篩選狀態
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [dateRange, setDateRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
 
   // 物業與房間選項（模擬）
-  const [properties, setProperties] = useState<{ id: string; name: string }[]>([
+  const [properties] = useState<{ id: string; name: string }[]>([
     { id: '1', name: '台北市信義區公寓' },
     { id: '2', name: '新北市板橋區大樓' },
   ]);
-  const [rooms, setRooms] = useState<{ id: string; number: string; propertyId: string }[]>([
+  const [rooms] = useState<{ id: string; number: string; propertyId: string }[]>([
     { id: '1', number: '301', propertyId: '1' },
     { id: '2', number: '302', propertyId: '1' },
     { id: '3', number: '303', propertyId: '1' },
@@ -208,9 +203,9 @@ export default function ExpensesPage() {
     
     // 日期範圍篩選
     if (dateRange.from || dateRange.to) {
-      const expenseDate = new Date(expense.expenseDate);
-      if (dateRange.from && expenseDate < dateRange.from) return false;
-      if (dateRange.to && expenseDate > dateRange.to) return false;
+      const expenseDate = String(expense.expenseDate || '').split('T')[0] ?? '';
+      if (dateRange.from && expenseDate && expenseDate < dateRange.from) return false;
+      if (dateRange.to && expenseDate && expenseDate > dateRange.to) return false;
     }
     
     return true;
@@ -243,7 +238,7 @@ export default function ExpensesPage() {
       type: 'fixed',
       category: 'rent',
       amount: 0,
-      expenseDate: new Date().toISOString().split('T')[0],
+      expenseDate: new Date().toISOString().split('T')[0] ?? '',
       description: '',
       recurring: false,
       recurringPeriod: 'monthly',
@@ -260,7 +255,7 @@ export default function ExpensesPage() {
       type: expense.type,
       category: expense.category,
       amount: expense.amount / 100, // 轉換為元
-      expenseDate: expense.expenseDate.split('T')[0],
+      expenseDate: String(expense.expenseDate || '').split('T')[0] ?? '',
       description: expense.description || '',
       recurring: expense.recurring,
       recurringPeriod: expense.recurringPeriod || 'monthly',
@@ -360,31 +355,28 @@ export default function ExpensesPage() {
     setSelectedProperty('all');
     setSelectedType('all');
     setSelectedCategory('all');
-    setDateRange({});
+    setDateRange({ from: '', to: '' });
   };
 
   return (
-    <div className="container mx-auto py-6">
+    <PageShell>
       <div className="flex flex-col space-y-6">
-        {/* 標題區 */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">支出管理</h1>
-            <p className="text-muted-foreground">
-              管理固定費用與資本支出，追蹤物業運營成本
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button onClick={handleAddExpense}>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              新增支出
-            </Button>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              匯出報表
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          title="支出管理"
+          description="管理固定費用與資本支出，追蹤物業運營成本"
+          actions={
+            <>
+              <Button onClick={handleAddExpense}>
+                <PlusCircle className="mr-2 h-4 w-4" />
+                新增支出
+              </Button>
+              <Button variant="outline">
+                <Download className="mr-2 h-4 w-4" />
+                匯出報表
+              </Button>
+            </>
+          }
+        />
 
         {/* 統計卡片 */}
         <div className="grid gap-4 md:grid-cols-3">
@@ -484,41 +476,22 @@ export default function ExpensesPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="date">日期範圍</Label>
-                <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      id="date"
-                      variant="outline"
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !dateRange.from && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateRange.from ? (
-                        dateRange.to ? (
-                          <>
-                            {formatDate(dateRange.from)} - {formatDate(dateRange.to)}
-                          </>
-                        ) : (
-                          formatDate(dateRange.from)
-                        )
-                      ) : (
-                        "選擇日期範圍"
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      initialFocus
-                      mode="range"
-                      defaultMonth={dateRange.from}
-                      selected={dateRange}
-                      onSelect={setDateRange}
-                      numberOfMonths={2}
-                    />
-                  </PopoverContent>
-                </Popover>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    id="date-from"
+                    type="date"
+                    value={dateRange.from}
+                    onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
+                    placeholder="開始日期"
+                  />
+                  <Input
+                    id="date-to"
+                    type="date"
+                    value={dateRange.to}
+                    onChange={(e) => setDateRange((prev) => ({ ...prev, to: e.target.value }))}
+                    placeholder="結束日期"
+                  />
+                </div>
               </div>
               <div className="space-y-2 flex items-end">
                 <div className="flex space-x-2">
@@ -630,7 +603,7 @@ export default function ExpensesPage() {
             )}
           </CardContent>
         </Card>
-      </div>
+      
 
       {/* 新增/編輯支出對話框 */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
@@ -799,6 +772,7 @@ export default function ExpensesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PageShell>
   );
 }

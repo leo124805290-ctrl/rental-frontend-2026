@@ -1,20 +1,19 @@
-// @ts-nocheck
 'use client';
 
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Download, Filter, TrendingUp, TrendingDown, DollarSign, Home, Users, BarChart3 } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { Download, Filter, TrendingUp, TrendingDown, DollarSign, Home, Users } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
 import { api } from '@/lib/api-client';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 // 損益報表資料類型
 interface MonthlyReport {
@@ -83,7 +82,7 @@ export default function ReportsPage() {
   // 篩選狀態
   const [selectedProperty, setSelectedProperty] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7)); // YYYY-MM
-  const [properties, setProperties] = useState<Property[]>([
+  const [properties] = useState<Property[]>([
     { id: '1', name: '台北市信義區公寓' },
     { id: '2', name: '新北市板橋區大樓' },
   ]);
@@ -246,23 +245,18 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="container mx-auto py-6">
+    <PageShell>
       <div className="flex flex-col space-y-6">
-        {/* 標題區 */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">損益報表</h1>
-            <p className="text-muted-foreground">
-              分析物業收入、支出與淨利，掌握營運狀況
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
+        <PageHeader
+          title="損益報表"
+          description="分析物業收入、支出與淨利，掌握營運狀況"
+          actions={
             <Button onClick={handleExport}>
               <Download className="mr-2 h-4 w-4" />
               匯出報表
             </Button>
-          </div>
-        </div>
+          }
+        />
 
         {/* 篩選器 */}
         <Card>
@@ -781,6 +775,6 @@ export default function ReportsPage() {
           )
         )}
       </div>
-    </div>
+    </PageShell>
   );
 }

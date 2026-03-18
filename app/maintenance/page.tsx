@@ -1,4 +1,3 @@
-// @ts-nocheck
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -8,15 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Download, Filter, PlusCircle, Wrench, Clock, CheckCircle, AlertCircle, XCircle, User } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Download, Filter, PlusCircle, Wrench, Clock, CheckCircle, AlertCircle, XCircle } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 // 維修紀錄資料類型（與後端 Maintenance 類型對應）
 interface MaintenanceRecord {
@@ -35,7 +32,7 @@ interface MaintenanceRecord {
   startedAt: string | null;
   completedAt: string | null;
   assignedTo: string | null;
-  assignedUserName?: string;
+  assignedUserName?: string | null;
   reportedBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -77,17 +74,17 @@ export default function MaintenancePage() {
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
 
   // 物業與房間選項（模擬）
-  const [properties, setProperties] = useState<{ id: string; name: string }[]>([
+  const [properties] = useState<{ id: string; name: string }[]>([
     { id: '1', name: '台北市信義區公寓' },
     { id: '2', name: '新北市板橋區大樓' },
   ]);
-  const [rooms, setRooms] = useState<{ id: string; number: string; propertyId: string }[]>([
+  const [rooms] = useState<{ id: string; number: string; propertyId: string }[]>([
     { id: '1', number: '301', propertyId: '1' },
     { id: '2', number: '302', propertyId: '1' },
     { id: '3', number: '303', propertyId: '1' },
     { id: '4', number: '401', propertyId: '2' },
   ]);
-  const [users, setUsers] = useState<{ id: string; name: string }[]>([
+  const [users] = useState<{ id: string; name: string }[]>([
     { id: '1', name: '管理員張先生' },
     { id: '2', name: '技術員李先生' },
   ]);
@@ -380,27 +377,24 @@ export default function MaintenancePage() {
   };
 
   return (
-    <div className="container mx-auto py-6">
+    <PageShell>
       <div className="flex flex-col space-y-6">
-        {/* 標題區 */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">維修紀錄管理</h1>
-            <p className="text-muted-foreground">
-              管理物業維修需求、追蹤處理進度、記錄維修成本
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button onClick={handleAddMaintenance}>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              新增維修
-            </Button>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              匯出報表
-            </Button>
-          </div>
-        </div>
+        <PageHeader
+          title="維修紀錄管理"
+          description="管理物業維修需求、追蹤處理進度、記錄維修成本"
+          actions={
+            <>
+              <Button onClick={handleAddMaintenance}>
+                <PlusCircle className="mr-2 h-4 w-4" />
+                新增維修
+              </Button>
+              <Button variant="outline">
+                <Download className="mr-2 h-4 w-4" />
+                匯出報表
+              </Button>
+            </>
+          }
+        />
 
         {/* 統計卡片 */}
         <div className="grid gap-4 md:grid-cols-4">
@@ -667,7 +661,7 @@ export default function MaintenancePage() {
             )}
           </CardContent>
         </Card>
-      </div>
+      
 
       {/* 新增/編輯維修對話框 */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
@@ -817,6 +811,7 @@ export default function MaintenancePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </PageShell>
   );
 }

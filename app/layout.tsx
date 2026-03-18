@@ -137,7 +137,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </header>
 
             {/* 頁面內容 */}
-            <main className="flex-1 overflow-auto p-4 lg:p-6">
+            <main className="flex-1 overflow-auto">
               {children}
             </main>
           </div>

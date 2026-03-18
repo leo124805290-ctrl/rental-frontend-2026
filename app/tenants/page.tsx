@@ -11,6 +11,8 @@ import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
 import CheckinModal from './components/checkin-modal';
 import { api } from '@/lib/api-client';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 // 租客資料類型
 interface Tenant {
@@ -177,17 +179,17 @@ export default function TenantsPage() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">租客管理</h1>
-            <p className="text-gray-600 mt-2">管理所有租客資訊</p>
-          </div>
-          <Button disabled>
-            <Plus className="mr-2 h-4 w-4" />
-            辦理入住
-          </Button>
-        </div>
+      <PageShell>
+        <PageHeader
+          title="租客管理"
+          description="管理所有租客資訊"
+          actions={
+            <Button disabled>
+              <Plus className="mr-2 h-4 w-4" />
+              辦理入住
+            </Button>
+          }
+        />
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[1, 2, 3].map((i) => (
@@ -206,22 +208,18 @@ export default function TenantsPage() {
             </Card>
           ))}
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (error) {
     return (
-      <div className="container mx-auto py-8">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">租客管理</h1>
-            <p className="text-gray-600 mt-2">管理所有租客資訊</p>
-          </div>
-          <Button onClick={loadTenants}>
-            重新載入
-          </Button>
-        </div>
+      <PageShell>
+        <PageHeader
+          title="租客管理"
+          description="管理所有租客資訊"
+          actions={<Button onClick={loadTenants}>重新載入</Button>}
+        />
         <Card className="border-red-200 bg-red-50">
           <CardContent className="pt-6">
             <div className="text-center py-8">
@@ -236,23 +234,22 @@ export default function TenantsPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="container mx-auto py-8">
-      {/* 標題與按鈕 */}
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">租客管理</h1>
-          <p className="text-gray-600 mt-2">管理所有租客資訊</p>
-        </div>
-        <Button onClick={handleCheckin}>
-          <Plus className="mr-2 h-4 w-4" />
-          辦理入住
-        </Button>
-      </div>
+    <PageShell>
+      <PageHeader
+        title="租客管理"
+        description="管理所有租客資訊"
+        actions={
+          <Button onClick={handleCheckin}>
+            <Plus className="mr-2 h-4 w-4" />
+            辦理入住
+          </Button>
+        }
+      />
 
       {/* 篩選區域 */}
       <Card className="mb-8">
@@ -446,6 +443,6 @@ export default function TenantsPage() {
         onSubmit={handleSubmitCheckin}
         rooms={Object.values(rooms)}
       />
-    </div>
+    </PageShell>
   );
 }

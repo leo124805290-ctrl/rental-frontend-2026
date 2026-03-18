@@ -15,6 +15,8 @@ import { CalendarIcon, Home, Users, CheckCircle, History, Calculator } from 'luc
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 interface TenantApi {
   id: string;
@@ -241,7 +243,7 @@ export default function CheckoutPage() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-6">
+      <PageShell>
         <Card>
           <CardHeader>
             <CardTitle>退租結算管理</CardTitle>
@@ -253,28 +255,23 @@ export default function CheckoutPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="container mx-auto py-6">
+    <PageShell>
       <div className="flex flex-col space-y-6">
-        {/* 標題區 */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">退租結算管理</h1>
-            <p className="text-muted-foreground">
-              處理租客退租（會寫入退租電表、選擇是否退還押金）
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
+        <PageHeader
+          title="退租結算管理"
+          description="處理租客退租（會寫入退租電表、選擇是否退還押金）"
+          actions={
             <Button variant="outline" onClick={() => void loadData()}>
               <History className="mr-2 h-4 w-4" />
               重新整理
             </Button>
-          </div>
-        </div>
+          }
+        />
 
         <div className="grid gap-6 lg:grid-cols-3">
           {/* 左側：退租結算表單 */}
@@ -534,6 +531,6 @@ export default function CheckoutPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

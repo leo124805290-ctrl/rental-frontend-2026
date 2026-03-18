@@ -13,6 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { PlusCircle, Wallet, Zap } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { api } from '@/lib/api-client';
+import { PageHeader } from '@/components/app-shell/page-header';
+import { PageShell } from '@/components/app-shell/page-shell';
 
 interface Property {
   id: string;
@@ -253,23 +255,18 @@ export default function PaymentsPage() {
   };
 
   return (
-    <div className="container mx-auto py-6">
+    <PageShell>
       <div className="flex flex-col space-y-6">
-        {/* 標題區 */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">收租管理</h1>
-            <p className="text-muted-foreground">
-              先抄表、再生成帳單、最後記錄繳費（支援部分繳費）
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
+        <PageHeader
+          title="收租管理"
+          description="先抄表、再生成帳單、最後記錄繳費（支援部分繳費）"
+          actions={
             <Button onClick={handleGenerateBills}>
               <PlusCircle className="mr-2 h-4 w-4" />
               生成帳單
             </Button>
-          </div>
-        </div>
+          }
+        />
 
         {/* 統計卡片 */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -573,6 +570,6 @@ export default function PaymentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }
