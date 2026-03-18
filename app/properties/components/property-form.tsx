@@ -26,6 +26,7 @@ export interface PropertyFormData {
   prepaidPeriod: number;
   contractStartDate: string;
   contractEndDate: string;
+  isDemo: boolean;
 }
 
 export interface PropertyFormSubmitData extends PropertyFormData {
@@ -59,6 +60,7 @@ export default function PropertyForm({
     prepaidPeriod: 1,
     contractStartDate: new Date().toISOString().split('T')[0] ?? '',
     contractEndDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] ?? '',
+    isDemo: false,
   };
 
   const [formData, setFormData] = useState<PropertyFormData>(() => ({
@@ -191,7 +193,10 @@ export default function PropertyForm({
   };
 
   // 處理輸入變更
-  const handleChange = (field: keyof PropertyFormData, value: string | number) => {
+  const handleChange = (
+    field: keyof PropertyFormData,
+    value: string | number | boolean,
+  ) => {
     setFormData(prev => ({
       ...prev,
       [field]: value,
@@ -409,6 +414,25 @@ export default function PropertyForm({
                 value={formData.contractEndDate}
                 onChange={(e) => handleChange('contractEndDate', e.target.value)}
               />
+            </div>
+
+            {/* 是否為測試用物業 */}
+            <div className="space-y-2 pt-2">
+              <div className="flex items-center gap-3">
+                <input
+                  id="isDemo"
+                  type="checkbox"
+                  checked={formData.isDemo}
+                  onChange={(e) => handleChange('isDemo', e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="isDemo" className="cursor-pointer">
+                  此物業為測試用（demo）
+                </Label>
+              </div>
+              <p className="text-xs text-gray-500">
+                demo 物業可以直接刪除；非 demo 物業刪除會改成封存並可復原。
+              </p>
             </div>
           </div>
 

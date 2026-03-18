@@ -72,10 +72,12 @@ export default function RoomsPage() {
 
   const filteredRooms = useMemo(
     () =>
-      rooms.filter((room) =>
-        selectedPropertyId === 'all' ? true : room.propertyId === selectedPropertyId
-      ),
-    [rooms, selectedPropertyId]
+      rooms.filter((room) => {
+        // 避免顯示「已不在管理清單」的物業所屬房間（例如剛封存/刪除）
+        if (!propertyMap.has(room.propertyId)) return false;
+        return selectedPropertyId === 'all' ? true : room.propertyId === selectedPropertyId;
+      }),
+    [rooms, selectedPropertyId, propertyMap]
   );
 
   const stats = useMemo(() => {

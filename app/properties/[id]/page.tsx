@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Building, MapPin, Phone, Calendar, Home, Users, Plus, Edit, Trash2, ArrowLeft } from 'lucide-react';
+import { Building, MapPin, Phone, Calendar, Home, Users, Plus, Edit, Trash2, ArrowLeft, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
@@ -31,6 +31,7 @@ interface Property {
   contractEndDate: string | null;
   createdAt: string;
   updatedAt: string;
+  status?: 'active' | 'archived' | 'demo' | string;
 }
 
 // 房間資料類型
@@ -128,6 +129,21 @@ export default function PropertyDetailPage() {
       console.error('載入物業詳情錯誤:', err);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleRestoreProperty = async () => {
+    if (!propertyId || !property) return;
+    if (property.status !== 'archived') return;
+
+    if (!confirm(`確定要「恢復使用中」：${property.name}？`)) return;
+
+    try {
+      await api.patch(`/api/properties/${propertyId}/restore`);
+      await loadPropertyAndRooms();
+    } catch (err) {
+      console.error('恢復物業失敗', err);
+      alert('恢復失敗，請稍後再試');
     }
   };
 
@@ -386,6 +402,42 @@ export default function PropertyDetailPage() {
               >
                 重試
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </PageShell>
+    );
+  }
+
+  const propertyStatus = property.status || 'active';
+  if (propertyStatus === 'archived') {
+    return (
+      <PageShell>
+        <PageHeader
+          title={property.name}
+          description="此物業已封存，只保留紀錄（不支援新增/編輯房間）。"
+          actions={
+            <Button onClick={handleRestoreProperty} variant="outline" size="sm">
+              <RotateCcw className="h-4 w-4 mr-2" />
+              恢復使用中
+            </Button>
+          }
+        />
+
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-6">
+            <div className="text-amber-900 font-medium">
+              已封存物業
+            </div>
+            <p className="text-amber-800 text-sm mt-2">
+              這個物業目前不在可操作清單中。若你需要繼續使用，請先按下「恢復使用中」。
+            </p>
+            <div className="mt-6">
+              <Link href="/properties">
+                <Button variant="outline" size="sm">
+                  返回物業列表
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>

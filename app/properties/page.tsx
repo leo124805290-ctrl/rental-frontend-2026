@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Building, MapPin, Phone, Calendar } from 'lucide-react';
+import { Plus, Edit, Trash2, Building, MapPin, Phone, Calendar, Archive, RotateCcw } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import PropertyForm, { type PropertyFormData, type PropertyFormSubmitData } from './components/property-form';
 import { api } from '@/lib/api-client';
@@ -29,6 +29,7 @@ interface Property {
   contractEndDate: string | null;
   createdAt: string;
   updatedAt: string;
+  status?: 'active' | 'archived' | 'demo' | string;
 }
 
 export default function PropertiesPage() {
@@ -38,18 +39,20 @@ export default function PropertiesPage() {
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   // 載入物業資料
   useEffect(() => {
     loadProperties();
-  }, []);
+  }, [showArchived]);
 
   const loadProperties = async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const data = await api.get<Property[]>('/api/properties');
+      const endpoint = showArchived ? '/api/properties?include_archived=true' : '/api/properties';
+      const data = await api.get<Property[]>(endpoint);
       setProperties(data);
     } catch (err) {
       console.warn('載入物業 API 失敗，使用模擬資料', err);
@@ -59,6 +62,7 @@ export default function PropertiesPage() {
           id: '1',
           name: '台北市信義區公寓',
           address: '台北市信義區信義路五段',
+          status: 'demo',
           totalFloors: 5,
           landlordName: '陳先生',
           landlordPhone: '0912-345-678',
@@ -87,17 +91,46 @@ export default function PropertiesPage() {
   };
 
   const handleDeleteProperty = (property: Property) => {
-    if (confirm(`確定要刪除「${property.name}」嗎？`)) {
-      (async () => {
-        try {
-          await api.delete(`/api/properties/${property.id}`);
-          setProperties((prev) => prev.filter((p) => p.id !== property.id));
-        } catch (err) {
-          console.error('刪除物業失敗', err);
-          alert('刪除失敗，請稍後再試');
-        }
-      })();
+    const status = property.status || 'active';
+    const isDemo = status === 'demo';
+
+    if (
+      !confirm(
+        isDemo
+          ? `確定要「刪除測試用物業」：${property.name}？\n\n這只允許刪除 demo 物業，歷史資料仍可能受到資料庫設定影響。`
+          : `確定要「封存物業」：${property.name}？\n\n封存後會從管理清單消失，但可透過 restore 復原（不會硬刪）。`,
+      )
+    ) {
+      return;
     }
+
+    (async () => {
+      try {
+        if (isDemo) {
+          await api.delete(`/api/properties/${property.id}`);
+        } else {
+          await api.patch(`/api/properties/${property.id}/archive`);
+        }
+        await loadProperties();
+      } catch (err) {
+        console.error('封存/刪除物業失敗', err);
+        alert('操作失敗，請稍後再試');
+      }
+    })();
+  };
+
+  const handleRestoreProperty = (property: Property) => {
+    if (!confirm(`確定要「恢復使用中」：${property.name}？`)) return;
+
+    (async () => {
+      try {
+        await api.patch(`/api/properties/${property.id}/restore`);
+        await loadProperties();
+      } catch (err) {
+        console.error('恢復物業失敗', err);
+        alert('恢復失敗，請稍後再試');
+      }
+    })();
   };
 
   const handleSubmitProperty = async (data: PropertyFormSubmitData) => {
@@ -113,6 +146,8 @@ export default function PropertiesPage() {
       prepayCycleMonths: Number(data.prepaidPeriod || 1),
       contractStartDate: data.contractStartDate ? new Date(data.contractStartDate).toISOString() : null,
       contractEndDate: data.contractEndDate ? new Date(data.contractEndDate).toISOString() : null,
+      // 後端用來判定可否硬刪的 demo 旗標
+      is_demo: data.isDemo,
     };
 
     try {
@@ -215,10 +250,18 @@ export default function PropertiesPage() {
         title="物業管理"
         description="管理您的租屋物業資訊"
         actions={
-          <Button onClick={handleAddProperty}>
-            <Plus className="mr-2 h-4 w-4" />
-            新增物業
-          </Button>
+          <>
+            <Button onClick={handleAddProperty}>
+              <Plus className="mr-2 h-4 w-4" />
+              新增物業
+            </Button>
+            <Button
+              variant={showArchived ? 'default' : 'outline'}
+              onClick={() => setShowArchived((v) => !v)}
+            >
+              {showArchived ? '只看使用中' : '顯示已封存'}
+            </Button>
+          </>
         }
       />
 
@@ -246,6 +289,21 @@ export default function PropertiesPage() {
                     <CardTitle className="text-xl font-bold text-gray-900">
                       {property.name}
                     </CardTitle>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {property.status === 'archived' ? (
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                          已封存
+                        </Badge>
+                      ) : property.status === 'demo' ? (
+                        <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                          測試用
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                          使用中
+                        </Badge>
+                      )}
+                    </div>
                     <CardDescription className="flex items-center mt-1">
                       <MapPin className="h-4 w-4 mr-1" />
                       {property.address}
@@ -303,27 +361,50 @@ export default function PropertiesPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleEditProperty(property)}
+                    disabled={property.status === 'archived'}
                   >
                     <Edit className="h-4 w-4 mr-2" />
                     編輯
                   </Button>
-                  <Link href={`/properties/${property.id}`} className="flex-1">
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="w-full"
-                    >
+                  {property.status === 'archived' ? (
+                    <Button variant="default" size="sm" className="w-full" disabled>
                       房間管理
                     </Button>
-                  </Link>
+                  ) : (
+                    <Link href={`/properties/${property.id}`} className="flex-1">
+                      <Button variant="default" size="sm" className="w-full">
+                        房間管理
+                      </Button>
+                    </Link>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
-                    className="text-red-600 border-red-200 hover:bg-red-50"
-                    onClick={() => handleDeleteProperty(property)}
+                    className={
+                      property.status === 'demo'
+                        ? 'text-red-600 border-red-200 hover:bg-red-50'
+                        : property.status === 'archived'
+                          ? 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                          : 'text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }
+                    onClick={() =>
+                      property.status === 'archived'
+                        ? handleRestoreProperty(property)
+                        : handleDeleteProperty(property)
+                    }
                   >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    刪除
+                    {property.status === 'archived' ? (
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                    ) : property.status === 'demo' ? (
+                      <Trash2 className="h-4 w-4 mr-2" />
+                    ) : (
+                      <Archive className="h-4 w-4 mr-2" />
+                    )}
+                    {property.status === 'archived'
+                      ? '恢復'
+                      : property.status === 'demo'
+                        ? '刪除'
+                        : '封存'}
                   </Button>
                 </div>
               </CardContent>
@@ -352,6 +433,7 @@ export default function PropertiesPage() {
                 landlordDeposit: editingProperty.landlordDeposit,
                 landlordMonthlyRent: editingProperty.landlordMonthlyRent,
                 prepaidPeriod: editingProperty.prepayCycleMonths,
+                isDemo: editingProperty.status === 'demo',
                 ...(editingProperty.contractStartDate
                   ? { contractStartDate: editingProperty.contractStartDate.split('T')[0] }
                   : {}),
