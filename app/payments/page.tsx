@@ -1,7 +1,6 @@
-// @ts-nocheck
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,219 +8,246 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Download, Filter, PlusCircle, Wallet, Zap, Home, Users } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { PlusCircle, Wallet, Zap } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
+import { api } from '@/lib/api-client';
 
-// 模擬帳單資料類型
+interface Property {
+  id: string;
+  name: string;
+}
+
+interface Room {
+  id: string;
+  propertyId: string;
+  roomNumber: string;
+  floor: number;
+  monthlyRent: number;
+  electricityRate: number; // 分
+  status: string;
+  tenantName?: string | null;
+}
+
+type PaymentStatus = 'pending' | 'partial' | 'paid' | string;
+
 interface Payment {
   id: string;
-  roomNumber: string;
-  tenantName: string;
-  propertyName: string;
   paymentMonth: string; // YYYY-MM
+  status: PaymentStatus;
   rentAmount: number;
   electricityFee: number;
-  managementFee: number;
-  otherFees: number;
   totalAmount: number;
   paidAmount: number;
   balance: number;
-  paymentStatus: 'pending' | 'partial' | 'paid' | 'overdue';
-  paymentDate: string | null;
   paymentMethod: string | null;
   notes: string | null;
-  createdAt: string;
+  createdAt?: string;
+}
+
+interface MeterReading {
+  id: string;
+  roomId: string;
+  readingValue: number;
+  readingDate: string; // YYYY-MM-DD
 }
 
 export default function PaymentsPage() {
-  const [payments, setPayments] = useState<Payment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
-  const [selectedProperty, setSelectedProperty] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [showCollectDialog, setShowCollectDialog] = useState(false);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('');
+  const [selectedRoomId, setSelectedRoomId] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>(
+    new Date().toISOString().slice(0, 7)
+  );
+
+  const [meterHistory, setMeterHistory] = useState<MeterReading[]>([]);
+  const [readingValue, setReadingValue] = useState<string>('');
+  const [readingDate, setReadingDate] = useState<string>(
+    new Date().toISOString().split('T')[0] ?? ''
+  );
+
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+  const [showCollectDialog, setShowCollectDialog] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
   const [collectAmount, setCollectAmount] = useState<string>('');
   const [collectMethod, setCollectMethod] = useState<string>('cash');
+  const [collectNotes, setCollectNotes] = useState<string>('');
 
-  // 載入帳單資料
+  const selectedRoom = useMemo(
+    () => rooms.find((r) => r.id === selectedRoomId) ?? null,
+    [rooms, selectedRoomId]
+  );
+
+  const lastReading = useMemo(() => {
+    if (meterHistory.length === 0) return null;
+    const sorted = [...meterHistory].sort((a, b) =>
+      a.readingDate > b.readingDate ? -1 : 1
+    );
+    return sorted[0] ?? null;
+  }, [meterHistory]);
+
+  const electricityRateYuan = useMemo(() => {
+    if (!selectedRoom) return 0;
+    return (Number(selectedRoom.electricityRate || 0) / 100) || 0;
+  }, [selectedRoom]);
+
+  const usagePreview = useMemo(() => {
+    const current = Number(readingValue || 0);
+    const prev = Number(lastReading?.readingValue || 0);
+    if (!readingValue) return null;
+    const diff = current - prev;
+    return diff >= 0 ? diff : null;
+  }, [readingValue, lastReading]);
+
+  const electricityFeePreview = useMemo(() => {
+    if (usagePreview === null) return null;
+    return Math.round(usagePreview * electricityRateYuan);
+  }, [usagePreview, electricityRateYuan]);
+
   useEffect(() => {
-    loadPayments();
+    (async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const props = await api.get<Property[]>('/api/properties');
+        setProperties(props);
+        setSelectedPropertyId(props[0]?.id ?? '');
+      } catch (err) {
+        console.error('載入物業失敗', err);
+        setError('載入物業失敗，請稍後再試');
+      } finally {
+        setIsLoading(false);
+      }
+    })();
   }, []);
 
+  useEffect(() => {
+    if (!selectedPropertyId) return;
+    (async () => {
+      setError(null);
+      try {
+        const rms = await api.get<Room[]>(`/api/rooms?propertyId=${selectedPropertyId}`);
+        setRooms(rms);
+        setSelectedRoomId(rms[0]?.id ?? '');
+      } catch (err) {
+        console.error('載入房間失敗', err);
+        setError('載入房間失敗，請稍後再試');
+        setRooms([]);
+        setSelectedRoomId('');
+      }
+    })();
+  }, [selectedPropertyId]);
+
   const loadPayments = async () => {
-    setIsLoading(true);
+    if (!selectedRoomId) return;
     setError(null);
-
     try {
-      // 模擬 API 請求延遲
-      await new Promise(resolve => setTimeout(resolve, 600));
-
-      // 模擬資料
-      const mockPayments: Payment[] = [
-        {
-          id: '1',
-          roomNumber: '301',
-          tenantName: '阮文雄',
-          propertyName: '台北市信義區公寓',
-          paymentMonth: '2026-03',
-          rentAmount: 18000,
-          electricityFee: 850,
-          managementFee: 0,
-          otherFees: 0,
-          totalAmount: 18850,
-          paidAmount: 18850,
-          balance: 0,
-          paymentStatus: 'paid',
-          paymentDate: '2026-03-10',
-          paymentMethod: 'cash',
-          notes: null,
-          createdAt: '2026-03-01'
-        },
-        {
-          id: '2',
-          roomNumber: '302',
-          tenantName: '陳美玲',
-          propertyName: '台北市信義區公寓',
-          paymentMonth: '2026-03',
-          rentAmount: 17000,
-          electricityFee: 920,
-          managementFee: 0,
-          otherFees: 0,
-          totalAmount: 17920,
-          paidAmount: 10000,
-          balance: 7920,
-          paymentStatus: 'partial',
-          paymentDate: '2026-03-05',
-          paymentMethod: 'bank_transfer',
-          notes: '先付押金',
-          createdAt: '2026-03-01'
-        },
-        {
-          id: '3',
-          roomNumber: '303',
-          tenantName: '黎文德',
-          propertyName: '台北市信義區公寓',
-          paymentMonth: '2026-03',
-          rentAmount: 19000,
-          electricityFee: 0,
-          managementFee: 0,
-          otherFees: 0,
-          totalAmount: 19000,
-          paidAmount: 0,
-          balance: 19000,
-          paymentStatus: 'pending',
-          paymentDate: null,
-          paymentMethod: null,
-          notes: null,
-          createdAt: '2026-03-01'
-        },
-        {
-          id: '4',
-          roomNumber: '401',
-          tenantName: '黃文山',
-          propertyName: '新北市板橋區大樓',
-          paymentMonth: '2026-03',
-          rentAmount: 16000,
-          electricityFee: 780,
-          managementFee: 0,
-          otherFees: 0,
-          totalAmount: 16780,
-          paidAmount: 0,
-          balance: 16780,
-          paymentStatus: 'overdue',
-          paymentDate: null,
-          paymentMethod: null,
-          notes: '逾期未繳',
-          createdAt: '2026-03-01'
-        }
-      ];
-
-      setPayments(mockPayments);
-    } catch (error) {
-      setError('載入帳單資料失敗');
-      console.error('載入帳單錯誤:', error);
-    } finally {
-      setIsLoading(false);
+      const [history, list] = await Promise.all([
+        api.get<MeterReading[]>(`/api/meter-readings?roomId=${selectedRoomId}`),
+        api.get<Payment[]>(`/api/payments?roomId=${selectedRoomId}&month=${selectedMonth}`),
+      ]);
+      setMeterHistory(history);
+      setPayments(list);
+    } catch (err) {
+      console.error('載入收租資料失敗', err);
+      setError('載入收租資料失敗，請稍後再試');
     }
   };
 
-  // 篩選後的帳單
-  const filteredPayments = payments.filter(payment => {
-    if (selectedProperty !== 'all' && payment.propertyName !== selectedProperty) return false;
-    if (selectedStatus !== 'all' && payment.paymentStatus !== selectedStatus) return false;
-    if (selectedMonth !== 'all' && payment.paymentMonth !== selectedMonth) return false;
-    return true;
-  });
+  useEffect(() => {
+    void loadPayments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoomId, selectedMonth]);
 
-  // 計算統計
-  const totalPending = payments.filter(p => p.paymentStatus === 'pending').reduce((sum, p) => sum + p.balance, 0);
-  const totalPartial = payments.filter(p => p.paymentStatus === 'partial').reduce((sum, p) => sum + p.balance, 0);
-  const totalOverdue = payments.filter(p => p.paymentStatus === 'overdue').reduce((sum, p) => sum + p.balance, 0);
-  const totalCollected = payments.filter(p => p.paymentStatus === 'paid').reduce((sum, p) => sum + p.paidAmount, 0);
+  // 計算統計（以目前房間+月份為準）
+  const totalPending = payments
+    .filter(p => p.status === 'pending')
+    .reduce((sum, p) => sum + Number(p.balance || 0), 0);
+  const totalPartial = payments
+    .filter(p => p.status === 'partial')
+    .reduce((sum, p) => sum + Number(p.balance || 0), 0);
+  const totalCollected = payments
+    .filter(p => p.status === 'paid')
+    .reduce((sum, p) => sum + Number(p.paidAmount || 0), 0);
 
   // 收租功能
   const handleCollectPayment = (payment: Payment) => {
     setSelectedPayment(payment);
-    setCollectAmount(payment.balance.toString());
+    setCollectAmount(String(payment.balance || 0));
     setCollectMethod('cash');
+    setCollectNotes('');
     setShowCollectDialog(true);
   };
 
-  const handleConfirmCollect = () => {
+  const handleConfirmCollect = async () => {
     if (!selectedPayment) return;
-
-    // 模擬收租邏輯
-    const updatedPayments = payments.map(p => {
-      if (p.id === selectedPayment.id) {
-        const amount = parseFloat(collectAmount) || 0;
-        const newPaidAmount = p.paidAmount + amount;
-        const newBalance = Math.max(0, p.totalAmount - newPaidAmount);
-        const newStatus = newBalance <= 0 ? 'paid' : newPaidAmount > 0 ? 'partial' : 'pending';
-
-        return {
-          ...p,
-          paidAmount: newPaidAmount,
-          balance: newBalance,
-          paymentStatus: newStatus,
-          paymentDate: new Date().toISOString().split('T')[0],
-          paymentMethod: collectMethod,
-        };
+    try {
+      const amount = parseInt(collectAmount, 10);
+      if (Number.isNaN(amount) || amount <= 0) {
+        alert('繳費金額需大於 0');
+        return;
       }
-      return p;
-    });
-
-    setPayments(updatedPayments);
-    setShowCollectDialog(false);
-    setSelectedPayment(null);
-    setCollectAmount('');
+      await api.patch(`/api/payments/${selectedPayment.id}/pay`, {
+        amount,
+        paymentMethod: collectMethod,
+        notes: collectNotes || undefined,
+      });
+      await loadPayments();
+      setShowCollectDialog(false);
+      setSelectedPayment(null);
+      setCollectAmount('');
+      alert('繳費已記錄');
+    } catch (err) {
+      console.error('繳費失敗', err);
+      alert('繳費失敗，請稍後再試');
+    }
   };
 
   // 生成帳單功能
-  const handleGenerateBills = () => {
-    setShowGenerateDialog(true);
-  };
+  const handleGenerateBills = () => setShowGenerateDialog(true);
 
-  const handleConfirmGenerate = () => {
-    // 模擬生成帳單邏輯
-    console.log('生成帳單，月份:', selectedMonth);
-    setShowGenerateDialog(false);
+  const handleConfirmGenerate = async () => {
+    if (!selectedRoomId) return;
+    try {
+      // 有填本期度數就先寫入抄表，避免重複輸入
+      if (readingValue.trim()) {
+        const val = parseInt(readingValue, 10);
+        if (Number.isNaN(val) || val < 0) {
+          alert('本期電表度數格式不正確');
+          return;
+        }
+        await api.post('/api/meter-readings', {
+          roomId: selectedRoomId,
+          readingValue: val,
+          readingDate,
+        });
+      }
+
+      await api.post('/api/payments/generate', {
+        roomId: selectedRoomId,
+        paymentMonth: selectedMonth,
+      });
+
+      await loadPayments();
+      setShowGenerateDialog(false);
+      alert('帳單已生成');
+    } catch (err) {
+      console.error('生成帳單失敗', err);
+      alert('生成帳單失敗，請稍後再試');
+    }
   };
 
   // 狀態標籤顏色
-  const getStatusBadge = (status: Payment['paymentStatus']) => {
+  const getStatusBadge = (status: Payment['status']) => {
     switch (status) {
       case 'paid': return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">已繳清</Badge>;
       case 'partial': return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">部分繳款</Badge>;
       case 'pending': return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">待繳款</Badge>;
-      case 'overdue': return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">逾期</Badge>;
       default: return <Badge>未知</Badge>;
     }
   };
@@ -234,17 +260,13 @@ export default function PaymentsPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">收租管理</h1>
             <p className="text-muted-foreground">
-              管理租客帳單、記錄繳費、查看收租狀況
+              先抄表、再生成帳單、最後記錄繳費（支援部分繳費）
             </p>
           </div>
           <div className="flex items-center space-x-2">
             <Button onClick={handleGenerateBills}>
               <PlusCircle className="mr-2 h-4 w-4" />
               生成帳單
-            </Button>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              匯出報表
             </Button>
           </div>
         </div>
@@ -258,9 +280,7 @@ export default function PaymentsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(totalPending)}</div>
-              <p className="text-xs text-muted-foreground">
-                {payments.filter(p => p.paymentStatus === 'pending').length} 筆待繳款
-              </p>
+              <p className="text-xs text-muted-foreground">以目前房間＋月份計算</p>
             </CardContent>
           </Card>
           <Card>
@@ -270,88 +290,119 @@ export default function PaymentsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(totalPartial)}</div>
-              <p className="text-xs text-muted-foreground">
-                {payments.filter(p => p.paymentStatus === 'partial').length} 筆部分繳款
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">逾期未繳</CardTitle>
-              <Home className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(totalOverdue)}</div>
-              <p className="text-xs text-muted-foreground">
-                {payments.filter(p => p.paymentStatus === 'overdue').length} 筆逾期
-              </p>
+              <p className="text-xs text-muted-foreground">以目前房間＋月份計算</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">已收金額</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <Wallet className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(totalCollected)}</div>
               <p className="text-xs text-muted-foreground">
-                {payments.filter(p => p.paymentStatus === 'paid').length} 筆已繳清
+                以目前房間＋月份計算
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">電價（元/度）</CardTitle>
+              <Zap className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{selectedRoom ? electricityRateYuan.toFixed(2) : '—'}</div>
+              <p className="text-xs text-muted-foreground">
+                來自房間設定
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* 篩選器 */}
+        {/* 收租條件（物業/房間/月份 + 抄表） */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <Filter className="mr-2 h-5 w-5" />
-              篩選條件
-            </CardTitle>
+            <CardTitle>收租條件</CardTitle>
+            <CardDescription>選擇物業、房間與月份，並可填入本期電表度數（會自動寫入抄電表）</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {error && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2">
-                <Label htmlFor="month">月份</Label>
-                <Input
-                  id="month"
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="property">物業</Label>
-                <Select value={selectedProperty} onValueChange={setSelectedProperty}>
+                <Label>物業</Label>
+                <Select
+                  value={selectedPropertyId || '__none__'}
+                  onValueChange={(v) => setSelectedPropertyId(v === '__none__' ? '' : v)}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="選擇物業" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">所有物業</SelectItem>
-                    <SelectItem value="台北市信義區公寓">台北市信義區公寓</SelectItem>
-                    <SelectItem value="新北市板橋區大樓">新北市板橋區大樓</SelectItem>
+                    <SelectItem value="__none__">請選擇物業</SelectItem>
+                    {properties.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="status">繳費狀態</Label>
-                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                <Label>房間</Label>
+                <Select
+                  value={selectedRoomId || '__none__'}
+                  onValueChange={(v) => setSelectedRoomId(v === '__none__' ? '' : v)}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="選擇狀態" />
+                    <SelectValue placeholder="選擇房間" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">所有狀態</SelectItem>
-                    <SelectItem value="pending">待繳款</SelectItem>
-                    <SelectItem value="partial">部分繳款</SelectItem>
-                    <SelectItem value="paid">已繳清</SelectItem>
-                    <SelectItem value="overdue">逾期</SelectItem>
+                    <SelectItem value="__none__">請選擇房間</SelectItem>
+                    {rooms.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.roomNumber}（{r.floor} 樓）
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label>月份</Label>
+                <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} />
+              </div>
+
               <div className="space-y-2 flex items-end">
-                <Button className="w-full" onClick={loadPayments}>
+                <Button className="w-full" onClick={loadPayments} disabled={!selectedRoomId}>
                   重新整理
                 </Button>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-2">
+                <Label>上期電表度數</Label>
+                <Input value={lastReading ? String(lastReading.readingValue) : ''} readOnly placeholder="尚無資料" />
+              </div>
+              <div className="space-y-2">
+                <Label>本期電表度數</Label>
+                <Input value={readingValue} onChange={(e) => setReadingValue(e.target.value)} placeholder="例如：1250" />
+              </div>
+              <div className="space-y-2">
+                <Label>抄表日期</Label>
+                <Input type="date" value={readingDate} onChange={(e) => setReadingDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>預估電費</Label>
+                <Input value={electricityFeePreview === null ? '' : String(electricityFeePreview)} readOnly placeholder="—" />
               </div>
             </div>
           </CardContent>
@@ -362,7 +413,7 @@ export default function PaymentsPage() {
           <CardHeader>
             <CardTitle>帳單列表</CardTitle>
             <CardDescription>
-              共 {filteredPayments.length} 筆帳單，總金額 {formatCurrency(filteredPayments.reduce((sum, p) => sum + p.totalAmount, 0))}
+              共 {payments.length} 筆帳單
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -380,25 +431,15 @@ export default function PaymentsPage() {
                   重試
                 </Button>
               </div>
-            ) : filteredPayments.length === 0 ? (
+            ) : payments.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-muted-foreground">沒有符合條件的帳單</p>
-                <Button variant="outline" onClick={() => {
-                  setSelectedMonth('all');
-                  setSelectedProperty('all');
-                  setSelectedStatus('all');
-                }} className="mt-2">
-                  清除篩選
-                </Button>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>房號</TableHead>
-                      <TableHead>租客</TableHead>
-                      <TableHead>物業</TableHead>
                       <TableHead>月份</TableHead>
                       <TableHead>租金</TableHead>
                       <TableHead>電費</TableHead>
@@ -409,11 +450,8 @@ export default function PaymentsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredPayments.map((payment) => (
+                    {payments.map((payment) => (
                       <TableRow key={payment.id}>
-                        <TableCell className="font-medium">{payment.roomNumber}</TableCell>
-                        <TableCell>{payment.tenantName}</TableCell>
-                        <TableCell>{payment.propertyName}</TableCell>
                         <TableCell>{payment.paymentMonth}</TableCell>
                         <TableCell>{formatCurrency(payment.rentAmount)}</TableCell>
                         <TableCell>{formatCurrency(payment.electricityFee)}</TableCell>
@@ -424,13 +462,13 @@ export default function PaymentsPage() {
                             <span className="text-sm text-muted-foreground">餘額 {formatCurrency(payment.balance)}</span>
                           </div>
                         </TableCell>
-                        <TableCell>{getStatusBadge(payment.paymentStatus)}</TableCell>
+                        <TableCell>{getStatusBadge(payment.status)}</TableCell>
                         <TableCell>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleCollectPayment(payment)}
-                            disabled={payment.paymentStatus === 'paid'}
+                            disabled={payment.status === 'paid'}
                           >
                             收租
                           </Button>
@@ -451,7 +489,7 @@ export default function PaymentsPage() {
           <DialogHeader>
             <DialogTitle>記錄繳費</DialogTitle>
             <DialogDescription>
-              記錄租客 {selectedPayment?.tenantName} 的繳費（房號 {selectedPayment?.roomNumber}）
+              記錄帳單繳費（支援部分繳費，狀態會自動更新）
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -482,11 +520,18 @@ export default function PaymentsPage() {
                 <SelectContent>
                   <SelectItem value="cash">現金</SelectItem>
                   <SelectItem value="bank_transfer">銀行轉帳</SelectItem>
-                  <SelectItem value="line_pay">LINE Pay</SelectItem>
-                  <SelectItem value="credit_card">信用卡</SelectItem>
                   <SelectItem value="other">其他</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="notes">備註</Label>
+              <Input
+                id="notes"
+                value={collectNotes}
+                onChange={(e) => setCollectNotes(e.target.value)}
+                placeholder="例如：先付一半"
+              />
             </div>
           </div>
           <DialogFooter>
@@ -506,22 +551,15 @@ export default function PaymentsPage() {
           <DialogHeader>
             <DialogTitle>生成帳單</DialogTitle>
             <DialogDescription>
-              為所有租客生成指定月份的帳單
+              會先（可選）寫入本期抄表，再依月份生成帳單（租金 + 電費）
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="generate-month">帳單月份</Label>
-              <Input
-                id="generate-month"
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-              />
-            </div>
             <div className="rounded-md bg-muted p-3">
               <p className="text-sm text-muted-foreground">
-                將會為所有狀態為「已入住」的房間生成帳單，包含租金和電費計算。
+                房間：{selectedRoom ? `${selectedRoom.roomNumber}（${selectedRoom.floor} 樓）` : '—'}，月份：{selectedMonth}
+                <br />
+                本期度數：{readingValue ? readingValue : '未填（不寫入抄表）'}，抄表日期：{readingDate}
               </p>
             </div>
           </div>
