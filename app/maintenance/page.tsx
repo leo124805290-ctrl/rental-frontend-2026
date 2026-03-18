@@ -100,8 +100,15 @@ export default function MaintenancePage() {
 
     try {
       // 嘗試從 API 載入資料
-      const data = await api.get<MaintenanceRecord[]>('/api/maintenance');
-      setMaintenanceRecords(data);
+      const [data, propList] = await Promise.all([
+        api.get<MaintenanceRecord[]>('/api/maintenance'),
+        api.get<any[]>('/api/properties'),
+      ]);
+
+      // 一致性：維修操作列表只顯示 active/demo 物業的紀錄
+      const allowedPropertyIds = new Set(propList.map((p) => String(p.id)));
+      const filtered = data.filter((r) => allowedPropertyIds.has(String(r.propertyId)));
+      setMaintenanceRecords(filtered);
     } catch (error) {
       console.warn('API 載入失敗，使用模擬資料', error);
       // API 失敗時使用模擬資料

@@ -91,14 +91,25 @@ export default function TenantsPage() {
         };
       }
 
+      // 由 /api/rooms 反推「可操作清單」：這個端點應已只回 active/demo 物業的房間
+      const allowedPropertyIds = new Set(
+        Object.values(roomsMap).map((r) => String(r.propertyId)),
+      );
+
       const propsMap: Record<string, Property> = {};
       for (const p of propertyList) {
+        const pid = String(p.id);
+        if (!allowedPropertyIds.has(pid)) continue;
         propsMap[p.id] = { id: p.id, name: p.name };
       }
 
-      const normalizedTenants: Tenant[] = tenantList.map((t) => {
+      // archived 物業的租客若其房間不在 roomsMap 中，則不顯示於此操作頁
+      const normalizedTenants: Tenant[] = tenantList.reduce<Tenant[]>((acc, t) => {
+        const roomIdKey = String(t.roomId);
+        if (!roomsMap[roomIdKey]) return acc;
+
         const status = (t.status === 'checked_out' ? 'checked_out' : 'active') as Tenant['status'];
-        return {
+        acc.push({
           id: String(t.id),
           roomId: String(t.roomId),
           propertyId: String(t.propertyId),
@@ -113,8 +124,9 @@ export default function TenantsPage() {
           ...(t.notes ? { notes: String(t.notes) } : {}),
           createdAt: String(t.createdAt || new Date().toISOString()),
           updatedAt: String(t.updatedAt || t.createdAt || new Date().toISOString()),
-        };
-      });
+        });
+        return acc;
+      }, []);
 
       setTenants(normalizedTenants);
       setRooms(roomsMap);
