@@ -3,11 +3,10 @@
  * 統一處理所有 API 請求、錯誤處理、認證標頭
  */
 
-// 基礎 API URL（直接呼叫後端，不經過 Next.js rewrites）
+// 基礎 API URL
+// 生產環境走同源 `/api/*`（由 Vercel/Next.js rewrites 代理到 Zeabur），避免瀏覽器 CORS 擋住跨網域請求。
 // @ts-ignore - process.env 由 Next.js 提供
-const API_BASE_URL =
-  process.env['NEXT_PUBLIC_API_URL'] ||
-  'https://taiwan-landlord-2026.zeabur.app';
+const API_BASE_URL = '';
 
 // 請求逾時時間（毫秒）
 const REQUEST_TIMEOUT = 10000;
