@@ -70,87 +70,53 @@ export default function TenantsPage() {
     setError(null);
 
     try {
-      // 模擬 API 請求延遲
-      await new Promise(resolve => setTimeout(resolve, 800));
+      const [tenantList, roomList, propertyList] = await Promise.all([
+        api.get<any[]>('/api/tenants'),
+        api.get<any[]>('/api/rooms'),
+        api.get<any[]>('/api/properties'),
+      ]);
 
-      // 模擬租客資料
-      const mockTenants: Tenant[] = [
-        {
-          id: 'tenant-1',
-          roomId: 'room-1',
-          propertyId: 'property-1',
-          nameZh: '陳小明',
-          nameVi: 'Trần Tiểu Minh',
-          phone: '0912-345-678',
-          passportNumber: 'A12345678',
-          checkInDate: '2026-01-15T00:00:00.000Z',
-          expectedCheckoutDate: '2026-07-14T23:59:59.999Z',
-          status: 'active',
-          notes: '長期租客',
-          createdAt: '2026-01-15T00:00:00.000Z',
-          updatedAt: '2026-03-14T10:30:00.000Z',
-        },
-        {
-          id: 'tenant-2',
-          roomId: 'room-3',
-          propertyId: 'property-1',
-          nameZh: '李美華',
-          nameVi: 'Lý Mỹ Hoa',
-          phone: '0987-654-321',
-          passportNumber: 'B87654321',
-          checkInDate: '2026-02-01T00:00:00.000Z',
-          expectedCheckoutDate: '2026-08-31T23:59:59.999Z',
-          status: 'active',
-          createdAt: '2026-02-01T00:00:00.000Z',
-          updatedAt: '2026-03-14T11:15:00.000Z',
-        },
-        {
-          id: 'tenant-3',
-          roomId: 'room-5',
-          propertyId: 'property-2',
-          nameZh: '王大海',
-          nameVi: 'Vương Đại Hải',
-          phone: '0933-222-111',
-          passportNumber: 'C11223344',
-          checkInDate: '2026-03-01T00:00:00.000Z',
-          status: 'active',
-          createdAt: '2026-03-01T00:00:00.000Z',
-          updatedAt: '2026-03-14T12:45:00.000Z',
-        },
-        {
-          id: 'tenant-4',
-          roomId: 'room-2',
-          propertyId: 'property-1',
-          nameZh: '張美麗',
-          nameVi: 'Trương Mỹ Lệ',
-          phone: '0922-333-444',
-          passportNumber: 'D55667788',
-          checkInDate: '2025-12-01T00:00:00.000Z',
-          actualCheckoutDate: '2026-02-28T23:59:59.999Z',
-          status: 'checked_out',
-          notes: '已退租',
-          createdAt: '2025-12-01T00:00:00.000Z',
-          updatedAt: '2026-02-28T10:30:00.000Z',
-        },
-      ];
+      const roomsMap: Record<string, Room> = {};
+      for (const r of roomList) {
+        roomsMap[r.id] = {
+          id: r.id,
+          propertyId: r.propertyId,
+          roomNumber: r.roomNumber,
+          floor: Number(r.floor || 1),
+          status: String(r.status || 'vacant'),
+          monthlyRent: Number(r.monthlyRent || 0),
+          depositAmount: Number(r.depositAmount || 0),
+        };
+      }
 
-      // 模擬房間資料
-      const mockRooms: Record<string, Room> = {
-        'room-1': { id: 'room-1', propertyId: 'property-1', roomNumber: '101', floor: 1, status: 'occupied', monthlyRent: 18000, depositAmount: 18000 },
-        'room-2': { id: 'room-2', propertyId: 'property-1', roomNumber: '102', floor: 1, status: 'vacant', monthlyRent: 17000, depositAmount: 17000 },
-        'room-3': { id: 'room-3', propertyId: 'property-1', roomNumber: '201', floor: 2, status: 'occupied', monthlyRent: 19000, depositAmount: 19000 },
-        'room-5': { id: 'room-5', propertyId: 'property-2', roomNumber: '301', floor: 3, status: 'occupied', monthlyRent: 16000, depositAmount: 16000 },
-      };
+      const propsMap: Record<string, Property> = {};
+      for (const p of propertyList) {
+        propsMap[p.id] = { id: p.id, name: p.name };
+      }
 
-      // 模擬物業資料
-      const mockProperties: Record<string, Property> = {
-        'property-1': { id: 'property-1', name: '台北市信義區公寓' },
-        'property-2': { id: 'property-2', name: '新北市中和區華廈' },
-      };
+      const normalizedTenants: Tenant[] = tenantList.map((t) => {
+        const status = (t.status === 'checked_out' ? 'checked_out' : 'active') as Tenant['status'];
+        return {
+          id: String(t.id),
+          roomId: String(t.roomId),
+          propertyId: String(t.propertyId),
+          nameZh: String(t.nameZh || ''),
+          nameVi: String(t.nameVi || ''),
+          phone: String(t.phone || ''),
+          ...(t.passportNumber ? { passportNumber: String(t.passportNumber) } : {}),
+          checkInDate: String(t.checkInDate || t.createdAt || new Date().toISOString()),
+          ...(t.expectedCheckoutDate ? { expectedCheckoutDate: String(t.expectedCheckoutDate) } : {}),
+          ...(t.actualCheckoutDate ? { actualCheckoutDate: String(t.actualCheckoutDate) } : {}),
+          status,
+          ...(t.notes ? { notes: String(t.notes) } : {}),
+          createdAt: String(t.createdAt || new Date().toISOString()),
+          updatedAt: String(t.updatedAt || t.createdAt || new Date().toISOString()),
+        };
+      });
 
-      setTenants(mockTenants);
-      setRooms(mockRooms);
-      setProperties(mockProperties);
+      setTenants(normalizedTenants);
+      setRooms(roomsMap);
+      setProperties(propsMap);
     } catch (err) {
       setError('載入租客資料失敗，請稍後再試');
       console.error('載入租客錯誤:', err);
@@ -188,42 +154,25 @@ export default function TenantsPage() {
   const handleCheckin = () => setCheckinOpen(true);
 
   const handleSubmitCheckin = async (data: any) => {
-    // 先求「能用」：優先本地更新；如果後端有端點，再嘗試送出
     try {
-      // 後端若已提供入住 API，可在此替換成正確 endpoint
-      // await api.post('/api/tenants/checkin', data);
-      void api; // 保留 import，避免未使用
+      const checkInDate = new Date().toISOString().split('T')[0] ?? '';
+      await api.post('/api/checkin/complete', {
+        roomId: data.roomId,
+        propertyId: data.propertyId,
+        nameZh: data.nameZh,
+        nameVi: data.nameVi,
+        phone: data.phone,
+        passportNumber: data.passportNumber,
+        checkInDate,
+        paymentType: data.paymentType,
+        paymentAmount: Number(data.paidAmount || 0),
+      });
+
+      await loadTenants();
     } catch (e) {
-      console.warn('入住 API 送出失敗（先以本地資料更新）', e);
+      console.error('入住失敗', e);
+      alert('入住失敗，請稍後再試');
     }
-
-    const newTenant: Tenant = {
-      id: `tenant-${Date.now()}`,
-      roomId: data.roomId,
-      propertyId: data.propertyId || rooms[data.roomId]?.propertyId || 'unknown',
-      nameZh: data.nameZh,
-      nameVi: data.nameVi,
-      phone: data.phone,
-      passportNumber: data.passportNumber || undefined,
-      checkInDate: new Date().toISOString(),
-      status: 'active',
-      notes: data.notes || undefined,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    setTenants((prev) => [newTenant, ...prev]);
-    setRooms((prev) => {
-      const room = prev[data.roomId];
-      if (!room) return prev;
-      // full: occupied，partial/deposit_only: reserved
-      const nextStatus =
-        data.paymentType === 'full' ? 'occupied' : 'reserved';
-      return {
-        ...prev,
-        [data.roomId]: { ...room, status: nextStatus },
-      };
-    });
   };
 
   if (isLoading) {
