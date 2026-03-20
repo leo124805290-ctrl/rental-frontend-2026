@@ -309,13 +309,6 @@ export default function UsersPage() {
 
                   try {
                     await api.post('/api/admin/clear-all-data', { confirm: 'CLEAR_ALL' });
-                    // 清掉前端暫存/狀態，避免畫面停留在舊資料
-                    try {
-                      localStorage.clear();
-                      sessionStorage.clear();
-                    } catch {
-                      // ignore：某些瀏覽器限制不影響主要流程
-                    }
                     window.location.reload();
                   } catch (err) {
                     console.error('清除所有資料失敗', err);
