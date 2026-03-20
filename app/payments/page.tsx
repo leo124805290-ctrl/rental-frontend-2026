@@ -136,7 +136,7 @@ export default function PaymentsPage() {
     (async () => {
       setError(null);
       try {
-        const rms = await api.get<Room[]>(`/api/rooms?propertyId=${selectedPropertyId}`);
+        const rms = await api.get<Room[]>(`/api/rooms?property_id=${selectedPropertyId}`);
         setRooms(rms);
         setSelectedRoomId(rms[0]?.id ?? '');
       } catch (err) {

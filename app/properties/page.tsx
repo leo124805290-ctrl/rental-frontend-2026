@@ -133,6 +133,39 @@ export default function PropertiesPage() {
     })();
   };
 
+  const handleDeleteAllDemoProperties = () => {
+    if (
+      !confirm(
+        '確定要「刪除所有測試用物業（demo）」嗎？\n\n此操作會硬刪 demo 物業及其關聯資料，無法復原。',
+      )
+    ) {
+      return;
+    }
+
+    (async () => {
+      try {
+        // 不依賴目前頁面 showArchived 狀態，直接抓全量，避免漏掉 demo
+        const all = await api.get<Property[]>('/api/properties?include_archived=true');
+        const demos = all.filter((p) => (p.status || 'active') === 'demo');
+
+        if (demos.length === 0) {
+          alert('目前沒有測試用（demo）物業可刪除。');
+          return;
+        }
+
+        // 逐一刪除，確保依序執行並更容易定位失敗原因
+        for (const p of demos) {
+          await api.delete(`/api/properties/${p.id}`);
+        }
+
+        await loadProperties();
+      } catch (err) {
+        console.error('刪除所有 demo 物業失敗', err);
+        alert('刪除失敗，請稍後再試');
+      }
+    })();
+  };
+
   const handleSubmitProperty = async (data: PropertyFormSubmitData) => {
     // PropertyForm 使用的是表單資料（非後端格式），這裡做最小映射
     const payload = {
@@ -254,6 +287,14 @@ export default function PropertiesPage() {
             <Button onClick={handleAddProperty}>
               <Plus className="mr-2 h-4 w-4" />
               新增物業
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleDeleteAllDemoProperties}
+              className="text-red-600 border-red-200 hover:bg-red-50"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              刪除所有測試
             </Button>
             <Button
               variant={showArchived ? 'default' : 'outline'}

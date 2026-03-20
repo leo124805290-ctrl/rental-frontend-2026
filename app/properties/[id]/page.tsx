@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -80,6 +80,7 @@ interface CheckinFormData {
 export default function PropertyDetailPage() {
   const params = useParams();
   const propertyId = params?.['id'] as string;
+  const router = useRouter();
   const [property, setProperty] = useState<Property | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -120,8 +121,12 @@ export default function PropertyDetailPage() {
     setError(null);
 
     try {
-      const p = await api.get<Property>(`/api/properties/${propertyId}`);
-      const r = await api.get<Room[]>(`/api/rooms?propertyId=${propertyId}`);
+      // 後端目前沒有 `GET /api/properties/:id`，改用全量物業列表找出對應 id
+      const [props, r] = await Promise.all([
+        api.get<Property[]>(`/api/properties?include_archived=true`),
+        api.get<Room[]>(`/api/rooms?property_id=${propertyId}`),
+      ]);
+      const p = props.find((x) => String(x.id) === String(propertyId)) ?? null;
       setProperty(p);
       setRooms(r);
     } catch (err) {
@@ -144,6 +149,31 @@ export default function PropertyDetailPage() {
     } catch (err) {
       console.error('恢復物業失敗', err);
       alert('恢復失敗，請稍後再試');
+    }
+  };
+
+  const handleDeleteProperty = async () => {
+    if (!propertyId || !property) return;
+    const status = property.status || 'active';
+    if (status !== 'demo') {
+      alert('目前僅允許刪除測試用（demo）物業');
+      return;
+    }
+
+    if (
+      !confirm(
+        `確定要「刪除測試用物業」：${property.name}？\n\n此操作會硬刪 demo 物業及其關聯資料。`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.delete(`/api/properties/${propertyId}`);
+      router.push('/properties');
+    } catch (err) {
+      console.error('刪除物業失敗', err);
+      alert('刪除失敗，請稍後再試');
     }
   };
 
@@ -466,12 +496,25 @@ export default function PropertyDetailPage() {
       <PageHeader
         title={property.name}
         actions={
-          <Link href="/properties">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              返回物業列表
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/properties">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                返回物業列表
+              </Button>
+            </Link>
+            {(property.status || 'active') === 'demo' && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                onClick={handleDeleteProperty}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                刪除
+              </Button>
+            )}
+          </div>
         }
       />
 
