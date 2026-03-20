@@ -13,6 +13,7 @@ import { Zap, Home, Battery, Calculator, SaveAll, RefreshCw } from 'lucide-react
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { api } from '@/lib/api-client';
 
 // 模擬房間電錶資料類型
 interface RoomMeter {
@@ -33,6 +34,9 @@ export default function MeterReadingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
+  const [allowedPropertyNames, setAllowedPropertyNames] = useState<Set<string>>(
+    new Set(),
+  );
   const [readingDate, setReadingDate] = useState<string>(
     new Date().toISOString().split('T')[0] ?? ''
   );
@@ -42,6 +46,19 @@ export default function MeterReadingsPage() {
   // 載入房間電錶資料
   useEffect(() => {
     loadMeterData();
+  }, []);
+
+  // 載入可操作物業（後端預設不回傳 archived）
+  useEffect(() => {
+    (async () => {
+      try {
+        const props = await api.get<any[]>('/api/properties');
+        setAllowedPropertyNames(new Set(props.map((p) => String(p.name))));
+      } catch (e) {
+        // API 失敗就保留既有 mock 行為（至少可以用 selectedProperty 進行前端篩選）
+        console.warn('載入物業失敗，meter-readings 仍使用 mock', e);
+      }
+    })();
   }, []);
 
   const loadMeterData = async () => {
@@ -127,6 +144,10 @@ export default function MeterReadingsPage() {
 
   // 篩選後的房間
   const filteredRooms = rooms.filter(room => {
+    // archived 物業的 mock 房間不應出現在可操作列表
+    if (allowedPropertyNames.size > 0 && !allowedPropertyNames.has(room.propertyName)) {
+      return false;
+    }
     if (selectedProperty !== 'all' && room.propertyName !== selectedProperty) return false;
     return true;
   });
@@ -287,8 +308,15 @@ export default function MeterReadingsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">所有物業</SelectItem>
-                    <SelectItem value="台北市信義區公寓">台北市信義區公寓</SelectItem>
-                    <SelectItem value="新北市板橋區大樓">新北市板橋區大樓</SelectItem>
+                    {Array.from(
+                      allowedPropertyNames.size > 0
+                        ? allowedPropertyNames
+                        : new Set(rooms.map((r) => r.propertyName)),
+                    ).map((name) => (
+                      <SelectItem key={name} value={name}>
+                        {name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

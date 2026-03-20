@@ -75,6 +75,7 @@
   - `/tenants`：載入時以 `/api/rooms` 的可操作清單過濾 archived 物業的租客
   - `/maintenance`：載入維修紀錄時以 `/api/properties`（active/demo）過濾 archived 物業紀錄
   - `/payments`：載入 `/api/properties` 後過濾 `archived` 物業，避免在 property 下拉選單中操作封存物業
+  - `/meter-readings`：載入 `/api/properties` 後過濾 archived 物業，並讓房間列表只顯示可操作清單
 
 #### 驗證
 - `rental-frontend-2026`
@@ -82,7 +83,7 @@
   - `npm run build`：✅
 
 #### 尚未完成（下一輪要接）
-- `meter-readings / reports / users` 等頁面：需要確認它們是否仍會顯示/允許操作 `archived` 物業關聯資料（後續要統一「只可操作 active；必要時僅在報表/歷史顯示」）
+- `reports / users` 等頁面：需要確認它們是否仍會顯示/允許操作 `archived` 物業關聯資料（後續要統一「只可操作 active；必要時僅在報表/歷史顯示」）
 - 新增物業封存後的「操作入口禁用」：目前只先做了物業詳情頁（`/properties/[id]`）的封存只讀；其它入口仍需逐頁補齊
 - 預留後端管理入口：一鍵清除所有 `demo` 物業及其關聯資料（尚未做）
 
