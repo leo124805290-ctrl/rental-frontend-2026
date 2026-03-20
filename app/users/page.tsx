@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 // Switch component not available, using Button instead
-import { Download, Filter, PlusCircle, User, Users, Shield, Phone, XCircle } from 'lucide-react';
+import { Download, Filter, PlusCircle, User, Users, Shield, Phone, XCircle, Trash2 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
@@ -298,6 +298,33 @@ export default function UsersPage() {
               <Button onClick={handleAddUser}>
                 <PlusCircle className="mr-2 h-4 w-4" />
                 新增使用者
+              </Button>
+              <Button
+                variant="outline"
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                onClick={async () => {
+                  if (!confirm('確定要「清除所有資料」嗎？\n\n此操作會刪除目前所有測試/業務資料（物業與關聯資料），無法復原。')) {
+                    return;
+                  }
+
+                  try {
+                    await api.post('/api/admin/clear-all-data', { confirm: 'CLEAR_ALL' });
+                    // 清掉前端暫存/狀態，避免畫面停留在舊資料
+                    try {
+                      localStorage.clear();
+                      sessionStorage.clear();
+                    } catch {
+                      // ignore：某些瀏覽器限制不影響主要流程
+                    }
+                    window.location.reload();
+                  } catch (err) {
+                    console.error('清除所有資料失敗', err);
+                    alert('清除失敗，請稍後再試');
+                  }
+                }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                清除所有資料
               </Button>
               <Button variant="outline">
                 <Download className="mr-2 h-4 w-4" />
