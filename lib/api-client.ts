@@ -67,35 +67,43 @@ async function checkConnectionStatus(): Promise<ConnectionStatus> {
   }
 }
 
-// 從 cookie 取得 token
+// 從 localStorage 取得 token
 function getAuthToken(): string | null {
-  if (typeof document === 'undefined') return null;
-
-  const cookies = document.cookie.split(';');
-  for (const cookie of cookies) {
-    const parts = cookie.trim().split('=');
-    if (parts.length >= 2 && parts[0] === 'auth_token') {
-      return decodeURIComponent(parts.slice(1).join('='));
-    }
+  if (typeof window === 'undefined') return null;
+  
+  try {
+    return localStorage.getItem('auth_token');
+  } catch (error) {
+    console.warn('無法從 localStorage 讀取 token:', error);
+    return null;
   }
-  return null;
 }
 
-// 設定 token 到 cookie
+// 設定 token 到 localStorage
 export function setAuthToken(token: string, expiresInHours: number = 24): void {
-  if (typeof document === 'undefined') return;
-
-  const expires = new Date();
-  expires.setTime(expires.getTime() + expiresInHours * 60 * 60 * 1000);
+  if (typeof window === 'undefined') return;
   
-  document.cookie = `auth_token=${encodeURIComponent(token)}; path=/; expires=${expires.toUTCString()}; SameSite=Strict`;
+  try {
+    localStorage.setItem('auth_token', token);
+    // 同時儲存到期時間（用於檢查）
+    const expires = new Date();
+    expires.setTime(expires.getTime() + expiresInHours * 60 * 60 * 1000);
+    localStorage.setItem('auth_token_expires', expires.toISOString());
+  } catch (error) {
+    console.warn('無法儲存 token 到 localStorage:', error);
+  }
 }
 
 // 移除 token
 export function removeAuthToken(): void {
-  if (typeof document === 'undefined') return;
+  if (typeof window === 'undefined') return;
   
-  document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Strict';
+  try {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_token_expires');
+  } catch (error) {
+    console.warn('無法從 localStorage 移除 token:', error);
+  }
 }
 
 // 取得授權標頭
