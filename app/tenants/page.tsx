@@ -10,7 +10,7 @@ import { Building, User, Phone, Calendar, Plus, Search, Filter } from 'lucide-re
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
 import CheckinModal from './components/checkin-modal';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 
@@ -167,25 +167,42 @@ export default function TenantsPage() {
 
   const handleCheckin = () => setCheckinOpen(true);
 
-  const handleSubmitCheckin = async (data: any) => {
+  const handleSubmitCheckin = async (data: {
+    roomId: string;
+    propertyId?: string;
+    nameZh: string;
+    nameVi: string;
+    phone: string;
+    passportNumber?: string;
+    paymentType: 'full' | 'partial' | 'deposit_only';
+    rentAmount: number;
+    depositAmount: number;
+    paidAmount: number;
+    paymentMethod?: string;
+    notes?: string;
+  }) => {
     try {
-      const checkInDate = new Date().toISOString().split('T')[0] ?? '';
       await api.post('/api/checkin/complete', {
         roomId: data.roomId,
-        propertyId: data.propertyId,
         nameZh: data.nameZh,
         nameVi: data.nameVi,
         phone: data.phone,
-        passportNumber: data.passportNumber,
-        checkInDate,
+        passportNumber: data.passportNumber || undefined,
+        notes: data.notes || undefined,
         paymentType: data.paymentType,
-        paymentAmount: Number(data.paidAmount || 0),
+        rentAmount: Number(data.rentAmount) || 0,
+        depositAmount: Number(data.depositAmount) || 0,
+        paidAmount: Number(data.paidAmount) || 0,
+        paymentMethod: data.paymentMethod || 'cash',
+        paymentNotes: data.notes || undefined,
       });
 
       await loadTenants();
     } catch (e) {
       console.error('入住失敗', e);
-      alert('入住失敗，請稍後再試');
+      const msg =
+        e instanceof ApiError ? e.message : '入住失敗，請稍後再試';
+      alert(msg);
     }
   };
 
