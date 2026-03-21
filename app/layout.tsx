@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { LayoutDashboard, Building, Users, CreditCard, Gauge, LogOut, TrendingDown, TrendingUp, BarChart3, Wrench, Home, UserCog, Menu } from 'lucide-react';
+import { UserSessionMenu } from '@/components/app-shell/user-session-menu';
 
 const navItems = [
   { href: '/dashboard', label: '儀表板', icon: LayoutDashboard },
@@ -29,6 +30,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     if (href === '/dashboard' && pathname === '/') return true;
     return pathname.startsWith(href);
   };
+
+  if (pathname === '/login') {
+    return (
+      <html lang="zh-TW">
+        <body className="min-h-screen bg-slate-100">{children}</body>
+      </html>
+    );
+  }
 
   return (
     <html lang="zh-TW">
@@ -128,11 +137,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   </p>
                 </div>
               </div>
-              <div className="hidden sm:flex items-center gap-3 text-xs text-slate-500">
-                <span className="rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 border border-emerald-100">
-                  API 連線：Zeabur（後端）
-                </span>
-                <span>今日 {new Date().toLocaleDateString('zh-TW')}</span>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="hidden sm:flex items-center gap-3 text-xs text-slate-500">
+                  <span className="rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 border border-emerald-100">
+                    API 連線：Zeabur（後端）
+                  </span>
+                  <span>今日 {new Date().toLocaleDateString('zh-TW')}</span>
+                </div>
+                <UserSessionMenu />
               </div>
             </header>
 

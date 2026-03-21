@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { simpleLogin } from '@/lib/api-client';
+import { api, setAuthToken, ApiError } from '@/lib/api-client';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
@@ -26,14 +26,24 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      // 使用真正的登入 API
-      await simpleLogin(password);
-      
-      // 跳轉到首頁
+      const result = await api.post<{
+        user: { id: string; email: string; role: string };
+        tokens: { accessToken: string; refreshToken?: string; expiresIn?: number };
+      }>('/api/auth/login', { password: password.trim() });
+
+      const access = result.tokens?.accessToken;
+      if (!access) {
+        throw new Error('登入回應缺少 accessToken');
+      }
+      setAuthToken(access);
       router.push('/');
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : '登入失敗，請稍後再試');
+      if (err instanceof ApiError) {
+        setError(err.message || '登入失敗');
+      } else {
+        setError(err instanceof Error ? err.message : '登入失敗，請稍後再試');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -138,7 +148,7 @@ export default function LoginPage() {
                   <div className="ml-3">
                     <p className="text-sm text-gray-600">
                       <strong className="font-medium">簡易版說明：</strong>
-                      此為開發階段使用的簡易登入系統，正式版將整合後端 JWT 認證。
+                      密碼與後端約定一致時會向 Zeabur API 取得 JWT，後續請求會帶 Authorization。
                     </p>
                   </div>
                 </div>

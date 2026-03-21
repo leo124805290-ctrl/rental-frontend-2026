@@ -67,43 +67,61 @@ async function checkConnectionStatus(): Promise<ConnectionStatus> {
   }
 }
 
-// 從 localStorage 取得 token
+const AUTH_TOKEN_KEY = 'auth_token';
+const AUTH_TOKEN_EXPIRES_KEY = 'auth_token_expires';
+
+// 從 localStorage 或 cookie 取得 token（與登入後寫入方式一致）
 function getAuthToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  
+  if (typeof document === 'undefined') return null;
+
   try {
-    return localStorage.getItem('auth_token');
-  } catch (error) {
-    console.warn('無法從 localStorage 讀取 token:', error);
-    return null;
+    const fromLs = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (fromLs) return fromLs;
+  } catch {
+    /* ignore */
   }
+
+  const cookies = document.cookie.split(';');
+  for (const cookie of cookies) {
+    const parts = cookie.trim().split('=');
+    if (parts.length >= 2 && parts[0] === AUTH_TOKEN_KEY) {
+      return decodeURIComponent(parts.slice(1).join('='));
+    }
+  }
+  return null;
 }
 
-// 設定 token 到 localStorage
+// 設定 token（localStorage + cookie + 到期時間）
 export function setAuthToken(token: string, expiresInHours: number = 24): void {
-  if (typeof window === 'undefined') return;
-  
+  if (typeof document === 'undefined') return;
+
+  const expires = new Date();
+  expires.setTime(expires.getTime() + expiresInHours * 60 * 60 * 1000);
+
   try {
-    localStorage.setItem('auth_token', token);
-    // 同時儲存到期時間（用於檢查）
-    const expires = new Date();
-    expires.setTime(expires.getTime() + expiresInHours * 60 * 60 * 1000);
-    localStorage.setItem('auth_token_expires', expires.toISOString());
-  } catch (error) {
-    console.warn('無法儲存 token 到 localStorage:', error);
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+    localStorage.setItem(AUTH_TOKEN_EXPIRES_KEY, expires.toISOString());
+  } catch {
+    /* ignore */
   }
+
+  const secure =
+    typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
+  document.cookie = `${AUTH_TOKEN_KEY}=${encodeURIComponent(token)}; path=/; expires=${expires.toUTCString()}; SameSite=Lax${secure}`;
 }
 
 // 移除 token
 export function removeAuthToken(): void {
-  if (typeof window === 'undefined') return;
-  
+  if (typeof document === 'undefined') return;
+
   try {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_token_expires');
-  } catch (error) {
-    console.warn('無法從 localStorage 移除 token:', error);
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_TOKEN_EXPIRES_KEY);
+  } catch {
+    /* ignore */
   }
+
+  document.cookie = `${AUTH_TOKEN_KEY}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax`;
 }
 
 // 取得授權標頭
@@ -251,27 +269,5 @@ export const api = {
   // 移除 token
   removeAuthToken,
 };
-
-// 簡易登入函數（簡易版）
-export async function simpleLogin(password: string): Promise<{ user: any; tokens: any }> {
-  // 呼叫真正的登入 API
-  try {
-    const result = await api.post('/api/auth/login', { password });
-    const { user, tokens } = result;
-    
-    // 設定 token
-    if (tokens?.accessToken) {
-      setAuthToken(tokens.accessToken);
-    }
-    
-    return { user, tokens };
-  } catch (error) {
-    // 如果 API 失敗，提供更友好的錯誤訊息
-    if (error instanceof ApiError && error.status === 401) {
-      throw new Error('密碼錯誤，請輸入 "enter" 登入');
-    }
-    throw error;
-  }
-}
 
 export default api;

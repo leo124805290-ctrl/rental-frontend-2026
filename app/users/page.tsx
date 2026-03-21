@@ -312,7 +312,9 @@ export default function UsersPage() {
                     window.location.reload();
                   } catch (err) {
                     console.error('清除所有資料失敗', err);
-                    alert('清除失敗，請稍後再試');
+                    const message =
+                      err instanceof Error ? err.message : (err as any)?.message;
+                    alert(`清除失敗：${message || '請稍後再試'}`);
                   }
                 }}
               >
