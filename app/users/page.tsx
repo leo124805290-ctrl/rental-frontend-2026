@@ -77,59 +77,9 @@ export default function UsersPage() {
       const data = await api.get<UserData[]>('/api/users');
       setUsers(data);
     } catch (error) {
-      console.warn('API 載入失敗，使用模擬資料', error);
-      // API 失敗時使用模擬資料
-      const mockUsers: UserData[] = [
-        {
-          id: '1',
-          email: 'admin@taiwan-landlord.com',
-          fullName: '系統管理員',
-          phone: '0912-345-678',
-          role: 'super_admin',
-          isActive: true,
-          lastLoginAt: '2026-03-15T14:30:00Z',
-          createdAt: '2026-03-01T10:00:00Z',
-          updatedAt: '2026-03-15T14:30:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '2',
-          email: 'manager1@taiwan-landlord.com',
-          fullName: '張經理',
-          phone: '0923-456-789',
-          role: 'admin',
-          isActive: true,
-          lastLoginAt: '2026-03-16T09:15:00Z',
-          createdAt: '2026-03-05T14:20:00Z',
-          updatedAt: '2026-03-16T09:15:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '3',
-          email: 'manager2@taiwan-landlord.com',
-          fullName: '李主任',
-          phone: '0934-567-890',
-          role: 'admin',
-          isActive: true,
-          lastLoginAt: '2026-03-14T16:45:00Z',
-          createdAt: '2026-03-10T11:30:00Z',
-          updatedAt: '2026-03-14T16:45:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '4',
-          email: 'inactive@taiwan-landlord.com',
-          fullName: '王先生',
-          phone: '0945-678-901',
-          role: 'admin',
-          isActive: false,
-          lastLoginAt: '2026-03-01T10:00:00Z',
-          createdAt: '2026-03-01T10:00:00Z',
-          updatedAt: '2026-03-10T15:20:00Z',
-          deletedAt: null,
-        },
-      ];
-      setUsers(mockUsers);
+      console.error(error);
+      setUsers([]);
+      setError(error instanceof Error ? error.message : '載入使用者失敗');
     } finally {
       setIsLoading(false);
     }

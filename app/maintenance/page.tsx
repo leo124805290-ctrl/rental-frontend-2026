@@ -73,21 +73,39 @@ export default function MaintenancePage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
 
-  // 物業與房間選項（模擬）
-  const [properties] = useState<{ id: string; name: string }[]>([
-    { id: '1', name: '台北市信義區公寓' },
-    { id: '2', name: '新北市板橋區大樓' },
-  ]);
-  const [rooms] = useState<{ id: string; number: string; propertyId: string }[]>([
-    { id: '1', number: '301', propertyId: '1' },
-    { id: '2', number: '302', propertyId: '1' },
-    { id: '3', number: '303', propertyId: '1' },
-    { id: '4', number: '401', propertyId: '2' },
-  ]);
-  const [users] = useState<{ id: string; name: string }[]>([
-    { id: '1', name: '管理員張先生' },
-    { id: '2', name: '技術員李先生' },
-  ]);
+  const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
+  const [rooms, setRooms] = useState<{ id: string; number: string; propertyId: string }[]>([]);
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [p, r, u] = await Promise.all([
+          api.get<Array<{ id: string; name: string }>>('/api/properties'),
+          api.get<Array<{ id: string; roomNumber: string; propertyId: string }>>('/api/rooms'),
+          api.get<Array<{ id: string; email: string; fullName: string | null }>>('/api/users'),
+        ]);
+        setProperties(p);
+        setRooms(
+          r.map((room) => ({
+            id: room.id,
+            number: room.roomNumber,
+            propertyId: room.propertyId,
+          })),
+        );
+        setUsers(
+          u.map((user) => ({
+            id: user.id,
+            name: user.fullName?.trim() || user.email,
+          })),
+        );
+      } catch {
+        setProperties([]);
+        setRooms([]);
+        setUsers([]);
+      }
+    })();
+  }, []);
 
   // 載入維修紀錄
   useEffect(() => {
@@ -110,121 +128,9 @@ export default function MaintenancePage() {
       const filtered = data.filter((r) => allowedPropertyIds.has(String(r.propertyId)));
       setMaintenanceRecords(filtered);
     } catch (error) {
-      console.warn('API 載入失敗，使用模擬資料', error);
-      // API 失敗時使用模擬資料
-      const mockRecords: MaintenanceRecord[] = [
-        {
-          id: '1',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          roomId: '1',
-          roomNumber: '301',
-          title: '浴室水管漏水',
-          description: '租客報告浴室洗手台下方水管漏水',
-          status: 'pending',
-          priority: 'urgent',
-          estimatedCost: 150000, // 1,500 元
-          actualCost: null,
-          reportedAt: '2026-03-15T10:30:00Z',
-          startedAt: null,
-          completedAt: null,
-          assignedTo: '2',
-          assignedUserName: '技術員李先生',
-          reportedBy: '1',
-          createdAt: '2026-03-15T10:30:00Z',
-          updatedAt: '2026-03-15T10:30:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '2',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          roomId: null,
-          roomNumber: '公共區域',
-          title: '電梯定期保養',
-          description: '每月電梯安全檢查與保養',
-          status: 'in_progress',
-          priority: 'medium',
-          estimatedCost: 80000, // 800 元
-          actualCost: null,
-          reportedAt: '2026-03-14T09:00:00Z',
-          startedAt: '2026-03-14T10:00:00Z',
-          completedAt: null,
-          assignedTo: '2',
-          assignedUserName: '技術員李先生',
-          reportedBy: '1',
-          createdAt: '2026-03-14T09:00:00Z',
-          updatedAt: '2026-03-14T10:00:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '3',
-          propertyId: '2',
-          propertyName: '新北市板橋區大樓',
-          roomId: '4',
-          roomNumber: '401',
-          title: '空調不冷',
-          description: '租客反應房間空調製冷效果不佳',
-          status: 'completed',
-          priority: 'high',
-          estimatedCost: 120000, // 1,200 元
-          actualCost: 110000, // 1,100 元
-          reportedAt: '2026-03-10T14:20:00Z',
-          startedAt: '2026-03-11T09:00:00Z',
-          completedAt: '2026-03-11T16:30:00Z',
-          assignedTo: '2',
-          assignedUserName: '技術員李先生',
-          reportedBy: '1',
-          createdAt: '2026-03-10T14:20:00Z',
-          updatedAt: '2026-03-11T16:30:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '4',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          roomId: '2',
-          roomNumber: '302',
-          title: '房間門鎖更換',
-          description: '租客遺失鑰匙，需更換門鎖',
-          status: 'cancelled',
-          priority: 'low',
-          estimatedCost: 50000, // 500 元
-          actualCost: null,
-          reportedAt: '2026-03-05T16:45:00Z',
-          startedAt: null,
-          completedAt: null,
-          assignedTo: null,
-          assignedUserName: null,
-          reportedBy: '1',
-          createdAt: '2026-03-05T16:45:00Z',
-          updatedAt: '2026-03-06T10:00:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '5',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          roomId: '3',
-          roomNumber: '303',
-          title: '牆壁重新粉刷',
-          description: '退租後房間牆壁重新粉刷',
-          status: 'pending',
-          priority: 'medium',
-          estimatedCost: 350000, // 3,500 元
-          actualCost: null,
-          reportedAt: '2026-03-16T08:15:00Z',
-          startedAt: null,
-          completedAt: null,
-          assignedTo: '1',
-          assignedUserName: '管理員張先生',
-          reportedBy: '1',
-          createdAt: '2026-03-16T08:15:00Z',
-          updatedAt: '2026-03-16T08:15:00Z',
-          deletedAt: null,
-        },
-      ];
-      setMaintenanceRecords(mockRecords);
+      console.error(error);
+      setMaintenanceRecords([]);
+      setError(error instanceof Error ? error.message : '載入維修紀錄失敗');
     } finally {
       setIsLoading(false);
     }

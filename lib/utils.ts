@@ -26,6 +26,11 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+/** 後端金額多為「分」，顯示為新台幣元 */
+export function formatCents(cents: number): string {
+  return formatCurrency(cents / 100);
+}
+
 /**
  * 格式化日期（台灣格式）
  * 

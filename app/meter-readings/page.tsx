@@ -10,12 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Zap, Home, Battery, Calculator, SaveAll, RefreshCw } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCents, formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 import { api } from '@/lib/api-client';
 
-// 模擬房間電錶資料類型
 interface RoomMeter {
   id: string;
   roomNumber: string;
@@ -48,95 +47,66 @@ export default function MeterReadingsPage() {
     loadMeterData();
   }, []);
 
-  // 載入可操作物業（後端預設不回傳 archived）
-  useEffect(() => {
-    (async () => {
-      try {
-        const props = await api.get<any[]>('/api/properties');
-        setAllowedPropertyNames(new Set(props.map((p) => String(p.name))));
-      } catch (e) {
-        // API 失敗就保留既有 mock 行為（至少可以用 selectedProperty 進行前端篩選）
-        console.warn('載入物業失敗，meter-readings 仍使用 mock', e);
-      }
-    })();
-  }, []);
-
   const loadMeterData = async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      // 模擬 API 請求延遲
-      await new Promise(resolve => setTimeout(resolve, 600));
+      const [properties, roomList] = await Promise.all([
+        api.get<Array<{ id: string; name: string }>>('/api/properties'),
+        api.get<
+          Array<{
+            id: string;
+            propertyId: string;
+            roomNumber: string;
+            floor: number;
+            electricityRate: number;
+          }>
+        >('/api/rooms'),
+      ]);
 
-      // 模擬資料
-      const mockRooms: RoomMeter[] = [
-        {
-          id: '1',
-          roomNumber: '301',
-          propertyName: '台北市信義區公寓',
-          electricityRate: 650, // 6.5元/度，存分
-          lastReading: 1250,
-          lastReadingDate: '2026-02-28',
-          currentReading: '',
-          usage: 0,
-          electricityFee: 0,
-          status: 'pending'
-        },
-        {
-          id: '2',
-          roomNumber: '302',
-          propertyName: '台北市信義區公寓',
-          electricityRate: 650,
-          lastReading: 980,
-          lastReadingDate: '2026-02-28',
-          currentReading: '1150',
-          usage: 170,
-          electricityFee: 170 * 6.5, // 1105元
-          status: 'recorded'
-        },
-        {
-          id: '3',
-          roomNumber: '303',
-          propertyName: '台北市信義區公寓',
-          electricityRate: 650,
-          lastReading: 1560,
-          lastReadingDate: '2026-02-28',
-          currentReading: '',
-          usage: 0,
-          electricityFee: 0,
-          status: 'pending'
-        },
-        {
-          id: '4',
-          roomNumber: '401',
-          propertyName: '新北市板橋區大樓',
-          electricityRate: 600,
-          lastReading: 820,
-          lastReadingDate: '2026-02-28',
-          currentReading: '910',
-          usage: 90,
-          electricityFee: 90 * 6.0, // 540元
-          status: 'recorded'
-        },
-        {
-          id: '5',
-          roomNumber: '402',
-          propertyName: '新北市板橋區大樓',
-          electricityRate: 600,
-          lastReading: 730,
-          lastReadingDate: '2026-02-28',
-          currentReading: '',
-          usage: 0,
-          electricityFee: 0,
-          status: 'overdue'
-        }
-      ];
+      setAllowedPropertyNames(new Set(properties.map((p) => String(p.name))));
+      const nameById = new Map(properties.map((p) => [p.id, p.name] as const));
 
-      setRooms(mockRooms);
+      const withReadings = await Promise.all(
+        roomList.map(async (room) => {
+          try {
+            const list = await api.get<
+              Array<{ readingValue: number; readingDate: string }>
+            >(`/api/meter-readings?roomId=${encodeURIComponent(room.id)}`);
+            const latest = list[0];
+            return { room, latest };
+          } catch {
+            return { room, latest: undefined };
+          }
+        }),
+      );
+
+      const next: RoomMeter[] = withReadings.map(({ room, latest }) => {
+        const propertyName = nameById.get(room.propertyId) ?? '未知物業';
+        const lastReading = latest?.readingValue ?? 0;
+        const lastReadingDate = latest?.readingDate
+          ? String(latest.readingDate).split('T')[0] ?? ''
+          : new Date().toISOString().split('T')[0] ?? '';
+        return {
+          id: room.id,
+          roomNumber: room.roomNumber,
+          propertyName,
+          electricityRate: room.electricityRate,
+          lastReading,
+          lastReadingDate,
+          currentReading: '',
+          usage: 0,
+          electricityFee: 0,
+          status: 'pending' as const,
+        };
+      });
+
+      setRooms(next);
     } catch (error) {
       setError('載入電錶資料失敗');
       console.error('載入電錶錯誤:', error);
+      setRooms([]);
     } finally {
       setIsLoading(false);
     }
@@ -144,7 +114,7 @@ export default function MeterReadingsPage() {
 
   // 篩選後的房間
   const filteredRooms = rooms.filter(room => {
-    // archived 物業的 mock 房間不應出現在可操作列表
+    // archived 物業房間不應出現在可操作列表
     if (allowedPropertyNames.size > 0 && !allowedPropertyNames.has(room.propertyName)) {
       return false;
     }
@@ -193,28 +163,23 @@ export default function MeterReadingsPage() {
     setShowBatchDialog(true);
   };
 
-  const handleConfirmBatchSave = () => {
-    // 模擬批次儲存邏輯
-    console.log('批次儲存電錶讀數:', readingDate, rooms.filter(r => r.currentReading));
-    
-    // 重置已記錄的房間
-    setRooms(prev => prev.map(room => {
-      if (room.currentReading) {
-        return {
-          ...room,
-          lastReading: parseFloat(room.currentReading) || room.lastReading,
-          lastReadingDate: readingDate,
-          currentReading: '',
-          usage: 0,
-          electricityFee: 0,
-          status: 'pending'
-        };
-      }
-      return room;
+  const handleConfirmBatchSave = async () => {
+    const toSave = filteredRooms.filter((r) => r.currentReading);
+    const readings = toSave.map((r) => ({
+      roomId: r.id,
+      readingValue: parseFloat(r.currentReading),
+      readingDate: readingDate,
     }));
-
+    try {
+      await api.post('/api/meter-readings/batch', { readings });
+    } catch (e) {
+      console.error(e);
+      alert('批次儲存失敗，請稍後再試');
+      return;
+    }
     setShowBatchDialog(false);
     setBatchNotes('');
+    await loadMeterData();
   };
 
   // 狀態標籤
@@ -402,7 +367,7 @@ export default function MeterReadingsPage() {
                       <TableRow key={room.id}>
                         <TableCell className="font-medium">{room.roomNumber}</TableCell>
                         <TableCell>{room.propertyName}</TableCell>
-                        <TableCell>{formatCurrency(room.electricityRate)}/度</TableCell>
+                        <TableCell>{formatCents(room.electricityRate)}/度</TableCell>
                         <TableCell>
                           <div className="flex flex-col">
                             <span>{room.lastReading.toLocaleString()}</span>

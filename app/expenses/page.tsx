@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Download, Filter, PlusCircle, Building, DollarSign, CreditCard } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCents, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
@@ -71,22 +71,33 @@ export default function ExpensesPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [dateRange, setDateRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
 
-  // 物業與房間選項（模擬）
-  const [properties] = useState<{ id: string; name: string }[]>([
-    { id: '1', name: '台北市信義區公寓' },
-    { id: '2', name: '新北市板橋區大樓' },
-  ]);
-  const [rooms] = useState<{ id: string; number: string; propertyId: string }[]>([
-    { id: '1', number: '301', propertyId: '1' },
-    { id: '2', number: '302', propertyId: '1' },
-    { id: '3', number: '303', propertyId: '1' },
-    { id: '4', number: '401', propertyId: '2' },
-  ]);
+  const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
+  const [rooms, setRooms] = useState<{ id: string; number: string; propertyId: string }[]>([]);
 
-  // 載入支出資料
+  useEffect(() => {
+    (async () => {
+      try {
+        const [p, r] = await Promise.all([
+          api.get<Array<{ id: string; name: string }>>('/api/properties'),
+          api.get<Array<{ id: string; roomNumber: string; propertyId: string }>>('/api/rooms'),
+        ]);
+        setProperties(p);
+        setRooms(
+          r.map((room) => ({
+            id: room.id,
+            number: room.roomNumber,
+            propertyId: room.propertyId,
+          })),
+        );
+      } catch {
+        setProperties([]);
+        setRooms([]);
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     loadExpenses();
-    // 實際環境中會從 API 載入物業和房間列表
   }, []);
 
   const loadExpenses = async () => {
@@ -94,102 +105,12 @@ export default function ExpensesPage() {
     setError(null);
 
     try {
-      // 嘗試從 API 載入資料
       const data = await api.get<Expense[]>('/api/expenses');
       setExpenses(data);
-    } catch (error) {
-      console.warn('API 載入失敗，使用模擬資料', error);
-      // API 失敗時使用模擬資料
-      const mockExpenses: Expense[] = [
-        {
-          id: '1',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          roomId: null,
-          type: 'fixed',
-          category: 'rent',
-          amount: 5000000, // 50,000 元
-          expenseDate: '2026-03-01T00:00:00Z',
-          description: '支付給房東的月租金',
-          receiptUrl: null,
-          recurring: true,
-          recurringPeriod: 'monthly',
-          createdAt: '2026-03-01T10:00:00Z',
-          updatedAt: '2026-03-01T10:00:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '2',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          roomId: '1',
-          roomNumber: '301',
-          type: 'capital',
-          category: 'renovation',
-          amount: 1200000, // 12,000 元
-          expenseDate: '2026-03-05T00:00:00Z',
-          description: '房間 301 重新粉刷',
-          receiptUrl: null,
-          recurring: false,
-          recurringPeriod: null,
-          createdAt: '2026-03-05T14:30:00Z',
-          updatedAt: '2026-03-05T14:30:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '3',
-          propertyId: '2',
-          propertyName: '新北市板橋區大樓',
-          roomId: null,
-          type: 'fixed',
-          category: 'utilities',
-          amount: 85000, // 850 元
-          expenseDate: '2026-03-10T00:00:00Z',
-          description: '整棟大樓水電費',
-          receiptUrl: null,
-          recurring: true,
-          recurringPeriod: 'monthly',
-          createdAt: '2026-03-10T09:15:00Z',
-          updatedAt: '2026-03-10T09:15:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '4',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          roomId: null,
-          type: 'capital',
-          category: 'equipment',
-          amount: 350000, // 3,500 元
-          expenseDate: '2026-03-12T00:00:00Z',
-          description: '購買新洗衣機',
-          receiptUrl: null,
-          recurring: false,
-          recurringPeriod: null,
-          createdAt: '2026-03-12T16:45:00Z',
-          updatedAt: '2026-03-12T16:45:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '5',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          roomId: '2',
-          roomNumber: '302',
-          type: 'fixed',
-          category: 'deposit',
-          amount: 1000000, // 10,000 元
-          expenseDate: '2026-03-15T00:00:00Z',
-          description: '退還租客押金',
-          receiptUrl: null,
-          recurring: false,
-          recurringPeriod: null,
-          createdAt: '2026-03-15T11:20:00Z',
-          updatedAt: '2026-03-15T11:20:00Z',
-          deletedAt: null,
-        },
-      ];
-      setExpenses(mockExpenses);
+    } catch (err) {
+      console.error(err);
+      setExpenses([]);
+      setError(err instanceof Error ? err.message : '載入支出失敗');
     } finally {
       setIsLoading(false);
     }
@@ -386,7 +307,7 @@ export default function ExpensesPage() {
               <CreditCard className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(totalFixed)}</div>
+              <div className="text-2xl font-bold">{formatCents(totalFixed)}</div>
               <p className="text-xs text-muted-foreground">
                 {expenses.filter(e => e.type === 'fixed').length} 筆固定支出
               </p>
@@ -398,7 +319,7 @@ export default function ExpensesPage() {
               <Building className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(totalCapital)}</div>
+              <div className="text-2xl font-bold">{formatCents(totalCapital)}</div>
               <p className="text-xs text-muted-foreground">
                 {expenses.filter(e => e.type === 'capital').length} 筆資本支出
               </p>
@@ -410,7 +331,7 @@ export default function ExpensesPage() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatCurrency(totalThisMonth)}</div>
+              <div className="text-2xl font-bold">{formatCents(totalThisMonth)}</div>
               <p className="text-xs text-muted-foreground">
                 本月累計支出
               </p>
@@ -512,7 +433,7 @@ export default function ExpensesPage() {
           <CardHeader>
             <CardTitle>支出紀錄</CardTitle>
             <CardDescription>
-              共 {filteredExpenses.length} 筆支出，總金額 {formatCurrency(filteredExpenses.reduce((sum, e) => sum + e.amount, 0))}
+              共 {filteredExpenses.length} 筆支出，總金額 {formatCents(filteredExpenses.reduce((sum, e) => sum + e.amount, 0))}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -571,7 +492,7 @@ export default function ExpensesPage() {
                         <TableCell>{expense.propertyName || expense.propertyId}</TableCell>
                         <TableCell>{expense.roomNumber || '公共區域'}</TableCell>
                         <TableCell className="font-bold text-red-600">
-                          {formatCurrency(expense.amount)}
+                          {formatCents(expense.amount)}
                         </TableCell>
                         <TableCell className="max-w-xs truncate">
                           {expense.description || '-'}

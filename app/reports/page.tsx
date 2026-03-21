@@ -82,10 +82,19 @@ export default function ReportsPage() {
   // 篩選狀態
   const [selectedProperty, setSelectedProperty] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7)); // YYYY-MM
-  const [properties] = useState<Property[]>([
-    { id: '1', name: '台北市信義區公寓' },
-    { id: '2', name: '新北市板橋區大樓' },
-  ]);
+  const [properties, setProperties] = useState<Property[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await api.get<Array<{ id: string; name: string }>>('/api/properties');
+        setProperties(list);
+        setSelectedProperty((prev) => prev || list[0]?.id || '');
+      } catch {
+        setProperties([]);
+      }
+    })();
+  }, []);
 
   // 載入報表資料
   useEffect(() => {
@@ -109,37 +118,9 @@ export default function ReportsPage() {
       const data = await api.get<MonthlyReport>(`/api/reports/monthly?propertyId=${selectedProperty}&month=${selectedMonth}`);
       setMonthlyReport(data);
     } catch (error) {
-      console.warn('API 載入失敗，使用模擬資料', error);
-      // API 失敗時使用模擬資料
-      const mockReport: MonthlyReport = {
-        propertyId: selectedProperty,
-        month: selectedMonth,
-        income: {
-          rent: 1800000, // 18,000 元
-          electricity: 8500, // 85 元
-          extra: 5000, // 50 元
-          total: 1813500, // 18,135 元
-          collected: 1450800, // 14,508 元 (80%)
-        },
-        expense: {
-          fixed: 500000, // 5,000 元
-          capital: 120000, // 1,200 元
-          total: 620000, // 6,200 元
-          breakdown: [
-            { category: 'rent', amount: 500000, description: '給房東的租金' },
-            { category: 'utilities', amount: 85000, description: '水電費' },
-            { category: 'renovation', amount: 35000, description: '小修繕' },
-          ],
-        },
-        netProfit: 1193500, // 11,935 元
-        rooms: {
-          total: 10,
-          occupied: 8,
-          vacant: 2,
-          occupancyRate: 80,
-        },
-      };
-      setMonthlyReport(mockReport);
+      console.error(error);
+      setMonthlyReport(null);
+      setError(error instanceof Error ? error.message : '載入月報表失敗');
     } finally {
       setIsLoading(false);
     }
@@ -153,39 +134,9 @@ export default function ReportsPage() {
       const data = await api.get<SummaryReport>(`/api/reports/summary?month=${selectedMonth}`);
       setSummaryReport(data);
     } catch (error) {
-      console.warn('API 載入失敗，使用模擬資料', error);
-      // API 失敗時使用模擬資料
-      const mockSummary: SummaryReport = {
-        month: selectedMonth,
-        totalProperties: 2,
-        totalRooms: 18,
-        occupiedRooms: 14,
-        vacantRooms: 4,
-        totalIncome: 3627000, // 36,270 元
-        totalExpense: 1240000, // 12,400 元
-        netProfit: 2387000, // 23,870 元
-        properties: [
-          {
-            id: '1',
-            name: '台北市信義區公寓',
-            rooms: 10,
-            occupied: 8,
-            income: 1813500, // 18,135 元
-            expense: 620000, // 6,200 元
-            netProfit: 1193500, // 11,935 元
-          },
-          {
-            id: '2',
-            name: '新北市板橋區大樓',
-            rooms: 8,
-            occupied: 6,
-            income: 1813500, // 18,135 元
-            expense: 620000, // 6,200 元
-            netProfit: 1193500, // 11,935 元
-          },
-        ],
-      };
-      setSummaryReport(mockSummary);
+      console.error(error);
+      setSummaryReport(null);
+      setError(error instanceof Error ? error.message : '載入總覽報表失敗');
     } finally {
       setIsLoading(false);
     }

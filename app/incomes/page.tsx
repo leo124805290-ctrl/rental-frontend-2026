@@ -55,11 +55,18 @@ export default function IncomesPage() {
   const [selectedType, setSelectedType] = useState<string>('all');
   const [dateRange, setDateRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
 
-  // 物業選項（模擬）
-  const [properties] = useState<{ id: string; name: string }[]>([
-    { id: '1', name: '台北市信義區公寓' },
-    { id: '2', name: '新北市板橋區大樓' },
-  ]);
+  const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const p = await api.get<Array<{ id: string; name: string }>>('/api/properties');
+        setProperties(p);
+      } catch {
+        setProperties([]);
+      }
+    })();
+  }, []);
 
   // 載入收入資料
   useEffect(() => {
@@ -75,66 +82,9 @@ export default function IncomesPage() {
       const data = await api.get<ExtraIncome[]>('/api/incomes');
       setIncomes(data);
     } catch (error) {
-      console.warn('API 載入失敗，使用模擬資料', error);
-      // API 失敗時使用模擬資料
-      const mockIncomes: ExtraIncome[] = [
-        {
-          id: '1',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          type: 'laundry',
-          amount: 5000, // 50 元
-          incomeDate: '2026-03-01T00:00:00Z',
-          description: '洗衣機收入',
-          createdAt: '2026-03-01T14:30:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '2',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          type: 'laundry',
-          amount: 7500, // 75 元
-          incomeDate: '2026-03-05T00:00:00Z',
-          description: '洗衣機收入',
-          createdAt: '2026-03-05T16:45:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '3',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          type: 'vending',
-          amount: 3000, // 30 元
-          incomeDate: '2026-03-08T00:00:00Z',
-          description: '自動販賣機收入',
-          createdAt: '2026-03-08T10:15:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '4',
-          propertyId: '2',
-          propertyName: '新北市板橋區大樓',
-          type: 'other',
-          amount: 20000, // 200 元
-          incomeDate: '2026-03-10T00:00:00Z',
-          description: '代收包裹手續費',
-          createdAt: '2026-03-10T12:00:00Z',
-          deletedAt: null,
-        },
-        {
-          id: '5',
-          propertyId: '1',
-          propertyName: '台北市信義區公寓',
-          type: 'laundry',
-          amount: 6200, // 62 元
-          incomeDate: '2026-03-15T00:00:00Z',
-          description: '洗衣機收入',
-          createdAt: '2026-03-15T18:20:00Z',
-          deletedAt: null,
-        },
-      ];
-      setIncomes(mockIncomes);
+      console.error(error);
+      setIncomes([]);
+      setError(error instanceof Error ? error.message : '載入收入失敗');
     } finally {
       setIsLoading(false);
     }
