@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertCircle, Home, User, DollarSign, CreditCard } from 'lucide-react';
+import { formatCents } from '@/lib/utils';
 
 // 房間資料類型
 interface Room {
@@ -24,10 +25,27 @@ interface Room {
 // 付款類型
 type PaymentType = 'full' | 'partial' | 'deposit_only';
 
+export type CheckinSubmitPayload = {
+  roomId: string;
+  propertyId: string;
+  nameZh: string;
+  nameVi: string;
+  phone: string;
+  passportNumber: string;
+  checkInDate: string;
+  paymentType: PaymentType;
+  rentAmount: number;
+  depositAmount: number;
+  paidAmount: number;
+  paymentAmount: number;
+  paymentMethod: string;
+  notes: string;
+};
+
 interface CheckinModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (data: any) => void;
+  onSubmit: (data: CheckinSubmitPayload) => void | Promise<void>;
   rooms: Room[];
 }
 
@@ -44,8 +62,7 @@ export default function CheckinModal({
   const [phone, setPhone] = useState('');
   const [passportNumber, setPassportNumber] = useState('');
   const [paymentType, setPaymentType] = useState<PaymentType>('full');
-  const [rentAmount, setRentAmount] = useState(0);
-  const [depositAmount, setDepositAmount] = useState(0);
+  /** 實際收款（分）；租金／押金僅從選定房間帶入，不另外存 state */
   const [paidAmount, setPaidAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [notes, setNotes] = useState('');
@@ -55,46 +72,24 @@ export default function CheckinModal({
   // 篩選可入住的房間（僅空房）
   const availableRooms = rooms.filter(room => room.status === 'vacant');
 
-  // 當選擇房間時，自動帶入租金和押金
+  // 選房或變更付款類型時，依「該房」月租／押金（分）重算預設實收金額
   useEffect(() => {
-    if (selectedRoomId) {
-      const selectedRoom = rooms.find(room => room.id === selectedRoomId);
-      if (selectedRoom) {
-        setRentAmount(selectedRoom.monthlyRent);
-        setDepositAmount(selectedRoom.depositAmount);
-        
-        // 根據付款類型設定預設付款金額
-        switch (paymentType) {
-          case 'full':
-            setPaidAmount(selectedRoom.monthlyRent + selectedRoom.depositAmount);
-            break;
-          case 'partial':
-            setPaidAmount(selectedRoom.depositAmount); // 預設只付押金
-            break;
-          case 'deposit_only':
-            setPaidAmount(selectedRoom.depositAmount);
-            break;
-        }
-      }
+    const room = rooms.find((r) => r.id === selectedRoomId);
+    if (!room) return;
+    const rent = room.monthlyRent;
+    const dep = room.depositAmount;
+    switch (paymentType) {
+      case 'full':
+        setPaidAmount(rent + dep);
+        break;
+      case 'partial':
+        setPaidAmount(dep);
+        break;
+      case 'deposit_only':
+        setPaidAmount(dep);
+        break;
     }
   }, [selectedRoomId, rooms, paymentType]);
-
-  // 當付款類型變更時，更新付款金額
-  useEffect(() => {
-    if (selectedRoomId && rentAmount > 0 && depositAmount > 0) {
-      switch (paymentType) {
-        case 'full':
-          setPaidAmount(rentAmount + depositAmount);
-          break;
-        case 'partial':
-          setPaidAmount(depositAmount); // 預設只付押金，可自行調整
-          break;
-        case 'deposit_only':
-          setPaidAmount(depositAmount);
-          break;
-      }
-    }
-  }, [paymentType, selectedRoomId, rentAmount, depositAmount]);
 
   // 重置表單
   const resetForm = () => {
@@ -104,21 +99,23 @@ export default function CheckinModal({
     setPhone('');
     setPassportNumber('');
     setPaymentType('full');
-    setRentAmount(0);
-    setDepositAmount(0);
     setPaidAmount(0);
     setPaymentMethod('cash');
     setNotes('');
     setErrors({});
   };
 
-  // 驗證表單
+  // 驗證表單（租金／押金以選定房間為準）
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
     if (!selectedRoomId) {
       newErrors['room'] = '請選擇房間';
     }
+
+    const room = rooms.find((r) => r.id === selectedRoomId);
+    const rentAmount = room?.monthlyRent ?? 0;
+    const depositAmount = room?.depositAmount ?? 0;
 
     if (!nameZh.trim()) {
       newErrors['nameZh'] = '請輸入中文姓名';
@@ -133,15 +130,15 @@ export default function CheckinModal({
     }
 
     if (paidAmount <= 0) {
-      newErrors['paidAmount'] = '付款金額必須大於 0';
+      newErrors['paidAmount'] = '實際收款金額必須大於 0';
     }
 
-    if (paymentType === 'full' && paidAmount < (rentAmount + depositAmount)) {
-      newErrors['paidAmount'] = '全額付款必須包含租金+押金';
+    if (paymentType === 'full' && paidAmount < rentAmount + depositAmount) {
+      newErrors['paidAmount'] = '全額付款必須至少為月租金＋押金';
     }
 
     if (paymentType === 'deposit_only' && paidAmount < depositAmount) {
-      newErrors['paidAmount'] = '押金金額不足';
+      newErrors['paidAmount'] = '金額不得低於該房押金';
     }
 
     setErrors(newErrors);
@@ -159,20 +156,31 @@ export default function CheckinModal({
     setIsSubmitting(true);
     try {
       const selectedRoom = rooms.find(room => room.id === selectedRoomId);
-      
-      const checkinData = {
+      if (!selectedRoom) {
+        setErrors({ room: '請選擇有效房間' });
+        return;
+      }
+
+      const rentFromRoom = selectedRoom.monthlyRent;
+      const depositFromRoom = selectedRoom.depositAmount;
+      const checkInDate =
+        new Date().toISOString().split('T')[0] ?? '';
+
+      const checkinData: CheckinSubmitPayload = {
         roomId: selectedRoomId,
+        propertyId: selectedRoom.propertyId,
         nameZh,
         nameVi,
         phone,
-        passportNumber,
+        passportNumber: passportNumber.trim(),
+        checkInDate,
         paymentType,
-        rentAmount,
-        depositAmount,
+        rentAmount: rentFromRoom,
+        depositAmount: depositFromRoom,
         paidAmount,
+        paymentAmount: paidAmount,
         paymentMethod,
         notes,
-        propertyId: selectedRoom?.propertyId,
       };
 
       await onSubmit(checkinData);
@@ -185,24 +193,17 @@ export default function CheckinModal({
     }
   };
 
-  // 格式化金額顯示
-  const formatCurrency = (amount: number) => {
-    return amount.toLocaleString('zh-TW', {
-      style: 'currency',
-      currency: 'TWD',
-      minimumFractionDigits: 0,
-    });
-  };
-
-  // 計算應付總額
+  // 計算應付總額（依房間）
   const calculateTotalDue = () => {
+    const r = selectedRoom?.monthlyRent ?? 0;
+    const d = selectedRoom?.depositAmount ?? 0;
     switch (paymentType) {
       case 'full':
-        return rentAmount + depositAmount;
+        return r + d;
       case 'partial':
-        return depositAmount; // 部分付款至少付押金
+        return d;
       case 'deposit_only':
-        return depositAmount;
+        return d;
       default:
         return 0;
     }
@@ -259,7 +260,7 @@ export default function CheckinModal({
                     ) : (
                       availableRooms.map(room => (
                         <SelectItem key={room.id} value={room.id}>
-                          {room.roomNumber} 號房 ({room.floor}樓) - {formatCurrency(room.monthlyRent)}/月
+                          {room.roomNumber} 號房 ({room.floor}樓) - {formatCents(room.monthlyRent)}/月
                         </SelectItem>
                       ))
                     )}
@@ -283,11 +284,11 @@ export default function CheckinModal({
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">月租金</p>
-                      <p className="font-medium text-green-700">{formatCurrency(selectedRoom.monthlyRent)}</p>
+                      <p className="font-medium text-green-700">{formatCents(selectedRoom.monthlyRent)}</p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">押金</p>
-                      <p className="font-medium text-blue-700">{formatCurrency(selectedRoom.depositAmount)}</p>
+                      <p className="font-medium text-blue-700">{formatCents(selectedRoom.depositAmount)}</p>
                     </div>
                   </div>
                 </div>
@@ -406,23 +407,27 @@ export default function CheckinModal({
                 <div className="bg-gray-50 p-4 rounded-md">
                   <div className="space-y-3">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">月租金</span>
-                      <span className="font-medium">{formatCurrency(rentAmount)}</span>
+                      <span className="text-gray-600">月租金（依房間）</span>
+                      <span className="font-medium">
+                        {selectedRoom ? formatCents(selectedRoom.monthlyRent) : '—'}
+                      </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">押金</span>
-                      <span className="font-medium">{formatCurrency(depositAmount)}</span>
+                      <span className="text-gray-600">押金（依房間）</span>
+                      <span className="font-medium">
+                        {selectedRoom ? formatCents(selectedRoom.depositAmount) : '—'}
+                      </span>
                     </div>
                     <div className="flex justify-between border-t pt-2">
                       <span className="text-gray-600 font-medium">應付總額</span>
-                      <span className="font-bold text-green-700">{formatCurrency(calculateTotalDue())}</span>
+                      <span className="font-bold text-green-700">{formatCents(calculateTotalDue())}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="paidAmount">
-                    付款金額 *
+                    實際收款金額 *
                     {errors['paidAmount'] && (
                       <span className="text-destructive text-xs ml-2 flex items-center">
                         <AlertCircle className="h-3 w-3 mr-1" />
@@ -442,7 +447,7 @@ export default function CheckinModal({
                     />
                   </div>
                   <p className="text-xs text-gray-500">
-                    實際付款金額，可修改
+                    對應後端 paidAmount／paymentAmount；月租與押金由上方房間帶入，無須手填
                   </p>
                 </div>
 
@@ -464,7 +469,7 @@ export default function CheckinModal({
                 {calculateBalance() > 0 && (
                   <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
                     <p className="text-sm text-yellow-800">
-                      <span className="font-medium">待付金額：{formatCurrency(calculateBalance())}</span>
+                      <span className="font-medium">待付金額：{formatCents(calculateBalance())}</span>
                       {paymentType === 'full' && '（全額付款尚未付清）'}
                       {paymentType === 'partial' && '（部分付款待補齊）'}
                     </p>

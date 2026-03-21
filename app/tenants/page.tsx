@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Building, User, Phone, Calendar, Plus, Search, Filter } from 'lucide-react';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
-import CheckinModal from './components/checkin-modal';
+import CheckinModal, { type CheckinSubmitPayload } from './components/checkin-modal';
 import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
@@ -167,32 +167,25 @@ export default function TenantsPage() {
 
   const handleCheckin = () => setCheckinOpen(true);
 
-  const handleSubmitCheckin = async (data: {
-    roomId: string;
-    propertyId?: string;
-    nameZh: string;
-    nameVi: string;
-    phone: string;
-    passportNumber?: string;
-    paymentType: 'full' | 'partial' | 'deposit_only';
-    rentAmount: number;
-    depositAmount: number;
-    paidAmount: number;
-    paymentMethod?: string;
-    notes?: string;
-  }) => {
+  const handleSubmitCheckin = async (data: CheckinSubmitPayload) => {
     try {
+      const rentAmount = Number(data.rentAmount);
+      const depositAmount = Number(data.depositAmount);
+      const paidAmount = Number(data.paidAmount);
       await api.post('/api/checkin/complete', {
         roomId: data.roomId,
+        propertyId: data.propertyId,
         nameZh: data.nameZh,
         nameVi: data.nameVi,
         phone: data.phone,
-        passportNumber: data.passportNumber || undefined,
+        passportNumber: data.passportNumber.trim() || undefined,
+        checkInDate: data.checkInDate,
         notes: data.notes || undefined,
         paymentType: data.paymentType,
-        rentAmount: Number(data.rentAmount) || 0,
-        depositAmount: Number(data.depositAmount) || 0,
-        paidAmount: Number(data.paidAmount) || 0,
+        rentAmount,
+        depositAmount,
+        paidAmount,
+        paymentAmount: paidAmount,
         paymentMethod: data.paymentMethod || 'cash',
         paymentNotes: data.notes || undefined,
       });
