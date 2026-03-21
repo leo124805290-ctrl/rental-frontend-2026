@@ -308,7 +308,7 @@ export default function UsersPage() {
                   }
 
                   try {
-                    await api.post('/api/admin/clear-all-data', { confirm: 'CLEAR_ALL' });
+                    await api.post('/api/users/clear-all-data', { confirm: 'CLEAR_ALL' });
                     window.location.reload();
                   } catch (err) {
                     console.error('清除所有資料失敗', err);
