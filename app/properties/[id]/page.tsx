@@ -279,6 +279,8 @@ export default function PropertyDetailPage() {
       checkInDate: checkinForm.checkInDate,
       paymentType: checkinForm.paymentType,
       paymentAmount: Number(checkinForm.paymentAmount || 0),
+      rentAmount: checkinRoom.monthlyRent,
+      depositAmount: checkinRoom.depositAmount,
     };
 
     setSavingCheckin(true);
