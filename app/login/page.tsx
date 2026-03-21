@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { simpleLogin } from '@/lib/api-client';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
@@ -25,17 +26,8 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      // 簡易版登入：密碼必須是 "enter"
-      if (password !== 'enter') {
-        throw new Error('密碼錯誤，請輸入 "enter" 登入');
-      }
-
-      // 模擬 API 請求延遲
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // 模擬登入成功，將 token 存入 cookie
-      const mockToken = 'mock-jwt-token-for-simple-auth';
-      document.cookie = `auth_token=${mockToken}; path=/; max-age=86400`; // 24小時
+      // 使用真正的登入 API
+      await simpleLogin(password);
       
       // 跳轉到首頁
       router.push('/');

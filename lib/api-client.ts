@@ -246,35 +246,24 @@ export const api = {
 
 // 簡易登入函數（簡易版）
 export async function simpleLogin(password: string): Promise<{ user: any; tokens: any }> {
-  // 簡易版：直接在前端檢查密碼
-  if (password !== 'enter') {
-    throw new Error('密碼錯誤，請輸入 "enter" 登入');
+  // 呼叫真正的登入 API
+  try {
+    const result = await api.post('/api/auth/login', { password });
+    const { user, tokens } = result;
+    
+    // 設定 token
+    if (tokens?.accessToken) {
+      setAuthToken(tokens.accessToken);
+    }
+    
+    return { user, tokens };
+  } catch (error) {
+    // 如果 API 失敗，提供更友好的錯誤訊息
+    if (error instanceof ApiError && error.status === 401) {
+      throw new Error('密碼錯誤，請輸入 "enter" 登入');
+    }
+    throw error;
   }
-
-  // 模擬 API 回應延遲
-  await new Promise(resolve => setTimeout(resolve, 500));
-
-  // 模擬使用者資料
-  const mockUser = {
-    id: 'test-user-id',
-    email: 'test@rental.com',
-    fullName: '測試使用者',
-    role: 'admin',
-  };
-
-  const mockTokens = {
-    accessToken: 'mock-jwt-token-for-simple-auth',
-    refreshToken: 'mock-refresh-token',
-    expiresIn: 3600,
-  };
-
-  // 設定 token
-  setAuthToken(mockTokens.accessToken);
-
-  return {
-    user: mockUser,
-    tokens: mockTokens,
-  };
 }
 
 export default api;
