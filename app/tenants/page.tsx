@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,8 +12,6 @@ import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
 import CheckinModal, { type CheckinSubmitPayload } from './components/checkin-modal';
 import { api, ApiError } from '@/lib/api-client';
-import { postCheckinGenerateAndMaybePay } from '@/lib/post-checkin-payments';
-import { paymentMonthFromCheckIn } from '@/lib/checkin-dates';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 
@@ -52,6 +51,7 @@ interface Property {
 }
 
 export default function TenantsPage() {
+  const router = useRouter();
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [rooms, setRooms] = useState<Record<string, Room>>({});
   const [properties, setProperties] = useState<Record<string, Property>>({});
@@ -176,42 +176,28 @@ export default function TenantsPage() {
 
   const handleSubmitCheckin = async (data: CheckinSubmitPayload) => {
     try {
-      const rentAmount = Number(data.rentAmount);
-      const depositAmount = Number(data.depositAmount);
-      const paidAmount = Number(data.paidAmount);
-      const result = await api.post<{ tenant: { id: string } }>('/api/checkin/complete', {
+      const room = rooms[data.roomId];
+      if (!room) {
+        alert('找不到房間資料，請重新整理頁面');
+        return;
+      }
+      await api.post('/api/checkin/complete', {
         roomId: data.roomId,
-        propertyId: data.propertyId,
         nameZh: data.nameZh,
         nameVi: data.nameVi,
         phone: data.phone,
         passportNumber: data.passportNumber.trim() || undefined,
         checkInDate: data.checkInDate,
         expectedCheckoutDate: data.expectedCheckoutDate,
-        notes: data.notes || undefined,
-        paymentType: data.paymentType,
-        rentAmount,
-        depositAmount,
-        paidAmount,
-        paymentAmount: paidAmount,
-        paymentMethod: data.paymentMethod || 'cash',
-        paymentNotes: data.notes || undefined,
+        paymentType: 'full',
+        rentAmount: room.monthlyRent,
+        depositAmount: room.depositAmount,
+        paidAmount: 0,
+        paymentAmount: 0,
       });
 
-      try {
-        await postCheckinGenerateAndMaybePay({
-          paymentType: data.paymentType,
-          roomId: data.roomId,
-          tenantId: result.tenant.id,
-          paymentMonth: paymentMonthFromCheckIn(data.checkInDate),
-          paidAmountCents: paidAmount,
-        });
-      } catch (billErr) {
-        console.error('產生收租帳單失敗', billErr);
-        alert('入住已成功，但產生當月帳單失敗，請至收租管理手動處理。');
-      }
-
       await loadTenants();
+      router.push('/payments');
     } catch (e) {
       console.error('入住失敗', e);
       const msg =

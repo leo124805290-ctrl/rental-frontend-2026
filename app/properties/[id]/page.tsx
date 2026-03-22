@@ -10,8 +10,7 @@ import { Building, MapPin, Phone, Calendar, Home, Users, Plus, Edit, Trash2, Arr
 import Link from 'next/link';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
-import { postCheckinGenerateAndMaybePay } from '@/lib/post-checkin-payments';
-import { addOneYearToIsoDate, paymentMonthFromCheckIn } from '@/lib/checkin-dates';
+import { addOneYearToIsoDate } from '@/lib/checkin-dates';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -67,17 +66,12 @@ interface RoomFormData {
   electricityPrice: number; // 元/度，送出時轉 electricityRate(分)
 }
 
-type PaymentType = 'full' | 'partial' | 'deposit_only';
-
 interface CheckinFormData {
   name: string;
   phone: string;
   passportNumber: string;
   checkInDate: string;
   expectedCheckoutDate: string;
-  paymentType: PaymentType;
-  /** 實際收款（新台幣元，API 送分） */
-  paymentAmountYuan: number;
 }
 
 export default function PropertyDetailPage() {
@@ -109,8 +103,6 @@ export default function PropertyDetailPage() {
       passportNumber: '',
       checkInDate: today,
       expectedCheckoutDate: addOneYearToIsoDate(today),
-      paymentType: 'full',
-      paymentAmountYuan: 0,
     };
   });
   const [savingCheckin, setSavingCheckin] = useState(false);
@@ -244,15 +236,12 @@ export default function PropertyDetailPage() {
   const openCheckinModal = (room: Room) => {
     setCheckinRoom(room);
     const today = new Date().toISOString().split('T')[0] ?? '';
-    const defaultYuan = (room.monthlyRent + room.depositAmount) / 100;
     setCheckinForm({
       name: '',
       phone: '',
       passportNumber: '',
       checkInDate: today,
       expectedCheckoutDate: addOneYearToIsoDate(today),
-      paymentType: 'full',
-      paymentAmountYuan: Math.round(defaultYuan * 100) / 100,
     });
     setCheckinOpen(true);
   };
@@ -288,11 +277,10 @@ export default function PropertyDetailPage() {
 
     const rentAmount = checkinRoom.monthlyRent;
     const depositAmount = checkinRoom.depositAmount;
-    const paidAmountCents = Math.round(Number(checkinForm.paymentAmountYuan) * 100);
 
     setSavingCheckin(true);
     try {
-      const result = await api.post<{ tenant: { id: string } }>('/api/checkin/complete', {
+      await api.post('/api/checkin/complete', {
         roomId: checkinRoom.id,
         nameZh: name,
         nameVi: name,
@@ -300,41 +288,22 @@ export default function PropertyDetailPage() {
         passportNumber: checkinForm.passportNumber.trim() || undefined,
         checkInDate: checkinForm.checkInDate,
         expectedCheckoutDate: checkinForm.expectedCheckoutDate,
-        paymentType: checkinForm.paymentType,
+        paymentType: 'full',
         rentAmount,
         depositAmount,
-        paidAmount: paidAmountCents,
-        paymentAmount: paidAmountCents,
-        paymentMethod: 'cash',
+        paidAmount: 0,
+        paymentAmount: 0,
       });
-
-      try {
-        await postCheckinGenerateAndMaybePay({
-          paymentType: checkinForm.paymentType,
-          roomId: checkinRoom.id,
-          tenantId: result.tenant.id,
-          paymentMonth: paymentMonthFromCheckIn(checkinForm.checkInDate),
-          paidAmountCents,
-        });
-      } catch (billErr) {
-        console.error('產生收租帳單失敗', billErr);
-        alert('入住已成功，但產生當月帳單失敗，請至收租管理手動處理。');
-      }
-
-      const nextStatus: Room['status'] =
-        checkinForm.paymentType === 'full' ? 'occupied' : 'reserved';
 
       setRooms((prev) =>
         prev.map((r) =>
-          r.id === checkinRoom.id
-            ? { ...r, status: nextStatus, tenantName: name }
-            : r
-        )
+          r.id === checkinRoom.id ? { ...r, status: 'occupied', tenantName: name } : r,
+        ),
       );
 
-      alert('入住成功');
       setCheckinOpen(false);
       setCheckinRoom(null);
+      router.push('/payments');
     } catch (err) {
       console.error('入住失敗', err);
       alert('入住失敗，請稍後再試');
@@ -927,7 +896,7 @@ export default function PropertyDetailPage() {
           <DialogHeader>
             <DialogTitle>安排入住{checkinRoom ? `－${checkinRoom.roomNumber} 號房` : ''}</DialogTitle>
             <DialogDescription>
-              請填寫租客資料與付款方式，送出後會建立入住紀錄並更新房間狀態。
+              送出後房間將標示為已入住，並產生押金／首月租金待收單；請至收租管理收款。
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmitCheckin}>
@@ -981,62 +950,6 @@ export default function PropertyDetailPage() {
                   }
                   required
                 />
-              </div>
-              <div className="space-y-2">
-                <Label>付款方式</Label>
-                <div className="grid grid-cols-1 gap-2 text-sm">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="paymentType"
-                      value="full"
-                      checked={checkinForm.paymentType === 'full'}
-                      onChange={() => handleCheckinFieldChange('paymentType', 'full')}
-                    />
-                    <span>全額付清（押金 + 首月租金）</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="paymentType"
-                      value="partial"
-                      checked={checkinForm.paymentType === 'partial'}
-                      onChange={() => handleCheckinFieldChange('paymentType', 'partial')}
-                    />
-                    <span>部分付款</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="paymentType"
-                      value="deposit_only"
-                      checked={checkinForm.paymentType === 'deposit_only'}
-                      onChange={() =>
-                        handleCheckinFieldChange('paymentType', 'deposit_only')
-                      }
-                    />
-                    <span>僅付押金</span>
-                  </label>
-                </div>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label htmlFor="paymentAmountYuan">付款金額（元）</Label>
-                <Input
-                  id="paymentAmountYuan"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={checkinForm.paymentAmountYuan}
-                  onChange={(e) =>
-                    handleCheckinFieldChange(
-                      'paymentAmountYuan',
-                      parseFloat(e.target.value) || 0
-                    )
-                  }
-                />
-                <p className="text-xs text-gray-500">
-                  依選擇的付款方式輸入實際收款金額。全額付清時可輸入押金＋首月租金總和。
-                </p>
               </div>
             </div>
             <DialogFooter>
