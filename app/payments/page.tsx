@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { CalendarRange, Loader2, Receipt } from 'lucide-react';
+import { CalendarRange, Loader2, Receipt, Zap } from 'lucide-react';
 import { formatCents, formatDate } from '@/lib/utils';
 import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
@@ -46,6 +46,14 @@ interface Room {
   roomNumber: string;
   floor: number;
   status: string;
+  /** 每度電價（分），例如 350 = 3.5 元 */
+  electricityRate?: number;
+}
+
+interface MeterReadingRow {
+  id: string;
+  readingValue: number;
+  readingDate: string;
 }
 
 type LineType = 'deposit' | 'rent' | 'electricity';
@@ -71,6 +79,27 @@ const LINE_LABEL: Record<LineType, string> = {
   rent: '月租金',
   electricity: '電費',
 };
+
+/** 帳單所屬月份（YYYY-MM → 2026年3月）— 月租/押金/電費歸屬哪一期 */
+function formatBillMonth(ym: string | undefined): string {
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return ym?.trim() || '—';
+  const [y, m] = ym.split('-');
+  if (!y || !m) return ym.trim();
+  return `${y}年${parseInt(m, 10)}月`;
+}
+
+function localTodayYmd(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** 與後端 payments 電費公式一致：用量(度) × (rate/100) 元 → 分 */
+function estimateElectricityFeeCents(usageDeg: number, electricityRateCentsPerDeg: number): number {
+  return Math.round(usageDeg * (electricityRateCentsPerDeg / 100) * 100);
+}
 
 function displayStatus(p: PaymentRow): { label: string; className: string } {
   const paid = Number(p.paidAmount || 0);
@@ -101,6 +130,17 @@ export default function PaymentsPage() {
   const [collectMethod, setCollectMethod] = useState('cash');
   const [collectNotes, setCollectNotes] = useState('');
   const [collectSubmitting, setCollectSubmitting] = useState(false);
+
+  const [meterReadings, setMeterReadings] = useState<MeterReadingRow[]>([]);
+  const [meterLoading, setMeterLoading] = useState(false);
+  const [meterValue, setMeterValue] = useState('');
+  const [meterDate, setMeterDate] = useState(() => localTodayYmd());
+  const [meterSubmitting, setMeterSubmitting] = useState(false);
+
+  const selectedRoom = useMemo(
+    () => rooms.find((r) => r.id === selectedRoomId) ?? null,
+    [rooms, selectedRoomId],
+  );
 
   useEffect(() => {
     (async () => {
@@ -164,6 +204,29 @@ export default function PaymentsPage() {
     void loadRows();
   }, [loadRows]);
 
+  useEffect(() => {
+    if (selectedRoomId === 'all' || !selectedRoomId) {
+      setMeterReadings([]);
+      setMeterValue('');
+      setMeterDate(localTodayYmd());
+      return;
+    }
+    (async () => {
+      setMeterLoading(true);
+      try {
+        const list = await api.get<MeterReadingRow[]>(
+          `/api/meter-readings?roomId=${encodeURIComponent(selectedRoomId)}`,
+        );
+        setMeterReadings(Array.isArray(list) ? list : []);
+      } catch (e) {
+        console.error(e);
+        setMeterReadings([]);
+      } finally {
+        setMeterLoading(false);
+      }
+    })();
+  }, [selectedRoomId]);
+
   const handleGenerateMonthly = async () => {
     if (!confirm(`確定為所有「已入住」房間建立 ${selectedMonth} 租金帳單？已存在者會略過。`)) return;
     setMonthlyBusy(true);
@@ -184,13 +247,13 @@ export default function PaymentsPage() {
     }
   };
 
-  const handleGenerateElectricity = async () => {
+  /** 已抄表、僅依最後兩筆讀數產生帳單（舊流程，免再輸入度數） */
+  const handleGenerateElectricityFromExistingReadings = async () => {
     if (selectedRoomId === 'all') {
-      alert('請先選擇單一房間再生成電費帳單');
+      alert('請先選擇單一房間');
       return;
     }
-    const room = rooms.find((r) => r.id === selectedRoomId);
-    if (!room) return;
+    if (!selectedRoom) return;
     try {
       const existing = await api.get<PaymentRow[]>(
         `/api/payments?roomId=${encodeURIComponent(selectedRoomId)}&month=${encodeURIComponent(selectedMonth)}&lineType=electricity`,
@@ -220,6 +283,100 @@ export default function PaymentsPage() {
       alert(e instanceof ApiError ? e.message : '建立電費帳單失敗');
     }
   };
+
+  const handleMeterAndElectricityBill = async () => {
+    if (selectedRoomId === 'all' || !selectedRoom) {
+      alert('請先選擇單一房間');
+      return;
+    }
+    const v = parseFloat(meterValue.replace(/,/g, ''));
+    if (Number.isNaN(v) || v < 0) {
+      alert('請輸入有效的本次抄表度數');
+      return;
+    }
+    if (!meterDate) {
+      alert('請選擇抄表日期');
+      return;
+    }
+    setMeterSubmitting(true);
+    try {
+      const tenantRes = await api.get<unknown[]>(
+        `/api/tenants?roomId=${encodeURIComponent(selectedRoomId)}&status=active`,
+      );
+      const tid =
+        Array.isArray(tenantRes) && tenantRes[0] && typeof tenantRes[0] === 'object'
+          ? String((tenantRes[0] as { id?: string }).id ?? '')
+          : '';
+      const res = await api.post<{ mode?: string; message?: string }>(
+        '/api/payments/electricity-with-reading',
+        {
+          roomId: selectedRoomId,
+          paymentMonth: selectedMonth,
+          readingValue: v,
+          readingDate: new Date(meterDate + 'T12:00:00').toISOString(),
+          tenantId: tid || undefined,
+        },
+      );
+      if (res && typeof res === 'object' && 'mode' in res && (res as { mode: string }).mode === 'baseline') {
+        alert(
+          '已建立基準抄表。尚無上一筆可比較，無法計算電費；下次抄表後再按此鈕即可產生電費帳單。',
+        );
+      } else {
+        alert('已記錄抄表並產生電費帳單');
+      }
+      setMeterValue('');
+      const list = await api.get<MeterReadingRow[]>(
+        `/api/meter-readings?roomId=${encodeURIComponent(selectedRoomId)}`,
+      );
+      setMeterReadings(Array.isArray(list) ? list : []);
+      await loadRows();
+    } catch (e) {
+      console.error(e);
+      alert(e instanceof ApiError ? e.message : '抄表或產生電費失敗');
+    } finally {
+      setMeterSubmitting(false);
+    }
+  };
+
+  const meterPreview = useMemo(() => {
+    const rate = selectedRoom?.electricityRate ?? 350;
+    const latest = meterReadings[0];
+    const prevVal = latest?.readingValue;
+    const prevDate = latest?.readingDate;
+    const inputNum = parseFloat(meterValue.replace(/,/g, ''));
+    const hasInput = meterValue.trim() !== '' && !Number.isNaN(inputNum);
+    if (!hasInput) {
+      return {
+        rate,
+        prevVal: prevVal ?? null,
+        prevDate: prevDate ?? null,
+        usage: null as number | null,
+        feeCents: null as number | null,
+        isFirstBaseline: false,
+      };
+    }
+    if (prevVal === undefined) {
+      return {
+        rate,
+        prevVal: null,
+        prevDate: null,
+        usage: null,
+        feeCents: null,
+        isFirstBaseline: true,
+      };
+    }
+    const usage = inputNum - prevVal;
+    const feeCents =
+      usage >= 0 ? estimateElectricityFeeCents(usage, rate) : null;
+    return {
+      rate,
+      prevVal,
+      prevDate: prevDate ?? null,
+      usage,
+      feeCents,
+      isFirstBaseline: false,
+    };
+  }, [meterReadings, meterValue, selectedRoom]);
 
   const openCollect = (p: PaymentRow) => {
     setActive(p);
@@ -275,7 +432,7 @@ export default function PaymentsPage() {
     <PageShell>
       <PageHeader
         title="收租管理"
-        description="帳簿式檢視：依物業／房間／月份篩選，逐筆收款。"
+        description="預計金額由入住或產生帳單時依房間月租／押金／抄表自動寫入。下方可同頁抄表並產生電費，與租金一併在列表中收款。"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={handleGenerateMonthly} disabled={monthlyBusy}>
@@ -285,10 +442,6 @@ export default function PaymentsPage() {
                 <CalendarRange className="mr-2 h-4 w-4" />
               )}
               生成本月帳單（全房）
-            </Button>
-            <Button variant="secondary" onClick={handleGenerateElectricity}>
-              <Receipt className="mr-2 h-4 w-4" />
-              生成電費帳單（當前房間）
             </Button>
           </div>
         }
@@ -347,6 +500,136 @@ export default function PaymentsPage() {
         </CardContent>
       </Card>
 
+      {selectedRoomId !== 'all' && selectedRoom && (
+        <Card className="mb-6 border-amber-200/80 bg-amber-50/40">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Zap className="h-4 w-4 text-amber-600" />
+              抄表與電費（本頁完成）
+            </CardTitle>
+            <CardDescription>
+              帳單月份請與上方一致。公式：用量(度) ＝ 本次抄表度數 − 上一筆度數；應收電費 ＝ 用量 × 每度單價。產生後會出現在下方列表，與月租一併收款。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {meterLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                載入抄表紀錄…
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <span className="text-muted-foreground">上一筆度數</span>
+                    <p className="font-medium">
+                      {meterPreview.prevVal !== null && meterPreview.prevVal !== undefined
+                        ? `${meterPreview.prevVal} 度`
+                        : '—（尚無紀錄，送出後為基準抄表）'}
+                    </p>
+                    {meterPreview.prevDate && (
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(meterPreview.prevDate, 'short')}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">每度電費（此房）</span>
+                    <p className="font-medium">
+                      {(meterPreview.rate / 100).toLocaleString('zh-TW', {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 2,
+                      })}{' '}
+                      元／度
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="meter-val">本次抄表度數</Label>
+                    <Input
+                      id="meter-val"
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="例如 12580"
+                      value={meterValue}
+                      onChange={(e) => setMeterValue(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="meter-d">抄表日期</Label>
+                    <Input
+                      id="meter-d"
+                      type="date"
+                      value={meterDate}
+                      onChange={(e) => setMeterDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="rounded-md border bg-background px-3 py-2 text-sm">
+                  {meterPreview.isFirstBaseline && (
+                    <p className="text-muted-foreground">
+                      尚無上一筆可比較。送出後僅建立基準讀數，不會產生電費帳單；下次再抄表即可計算應收電費。
+                    </p>
+                  )}
+                  {!meterPreview.isFirstBaseline &&
+                    meterPreview.usage !== null &&
+                    meterPreview.feeCents !== null && (
+                      <>
+                        <p>
+                          <span className="text-muted-foreground">預估用量</span>{' '}
+                          <span className="font-medium">{meterPreview.usage} 度</span>
+                        </p>
+                        <p>
+                          <span className="text-muted-foreground">預估應收電費</span>{' '}
+                          <span className="font-medium">{formatCents(meterPreview.feeCents)}</span>
+                        </p>
+                      </>
+                    )}
+                  {!meterPreview.isFirstBaseline &&
+                    meterPreview.usage !== null &&
+                    meterPreview.usage < 0 && (
+                      <p className="text-destructive">本次度數不可小於上一筆。</p>
+                    )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => void handleMeterAndElectricityBill()}
+                    disabled={
+                      meterSubmitting ||
+                      (meterPreview.usage !== null && meterPreview.usage < 0)
+                    }
+                  >
+                    {meterSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        處理中…
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="mr-2 h-4 w-4" />
+                        記錄抄表並產生「{formatBillMonth(selectedMonth)}」電費帳單
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void handleGenerateElectricityFromExistingReadings()}
+                  >
+                    <Receipt className="mr-2 h-4 w-4" />
+                    已抄表，僅依讀數產生帳單
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {error && (
         <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}
@@ -356,7 +639,9 @@ export default function PaymentsPage() {
       <Card>
         <CardHeader>
           <CardTitle>帳單列表</CardTitle>
-          <CardDescription>共 {rows.length} 筆（金額單位：元）</CardDescription>
+          <CardDescription>
+            共 {rows.length} 筆。預計金額＝應收（系統帶入）；帳單月份＝歸屬哪一期的租金／押金／電費。
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {loadingList ? (
@@ -370,11 +655,12 @@ export default function PaymentsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>日期</TableHead>
+                    <TableHead>帳單月份</TableHead>
+                    <TableHead>建立日期</TableHead>
                     <TableHead>房號</TableHead>
                     <TableHead>租客</TableHead>
                     <TableHead>類型</TableHead>
-                    <TableHead className="text-right">預計金額</TableHead>
+                    <TableHead className="text-right">預計金額（應收）</TableHead>
                     <TableHead className="text-right">實收金額</TableHead>
                     <TableHead>狀態</TableHead>
                     <TableHead className="text-right">操作</TableHead>
@@ -386,15 +672,23 @@ export default function PaymentsPage() {
                     const lt = (p.lineType || 'rent') as LineType;
                     const dateStr = p.createdAt
                       ? formatDate(p.createdAt, 'short')
-                      : p.paymentMonth;
+                      : '—';
                     return (
                       <TableRow key={p.id}>
-                        <TableCell className="whitespace-nowrap">{dateStr}</TableCell>
+                        <TableCell className="whitespace-nowrap font-medium">
+                          {formatBillMonth(p.paymentMonth)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            ({p.paymentMonth ?? '—'})
+                          </span>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {dateStr}
+                        </TableCell>
                         <TableCell>{p.roomNumber ?? '—'}</TableCell>
                         <TableCell>{p.tenantName ?? '—'}</TableCell>
                         <TableCell>{LINE_LABEL[lt] ?? lt}</TableCell>
                         <TableCell className="text-right font-medium">
-                          {formatCents(p.totalAmount)}
+                          {formatCents(p.totalAmount ?? 0)}
                         </TableCell>
                         <TableCell className="text-right">{formatCents(p.paidAmount)}</TableCell>
                         <TableCell>
@@ -429,15 +723,30 @@ export default function PaymentsPage() {
           <DialogHeader>
             <DialogTitle>收款</DialogTitle>
             <DialogDescription>
-              可多次收款，累加實收；金額以新台幣「元」輸入（會換算為分送後端）。
+              僅輸入「本次實收」；預計金額為系統帶入。可多次收款累加實收。金額以「元」輸入。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
+            {active && (
+              <div className="rounded-md bg-muted/60 px-3 py-2 text-sm">
+                <div>
+                  <span className="text-muted-foreground">帳單月份（歸屬期間）</span>{' '}
+                  <span className="font-medium">{formatBillMonth(active.paymentMonth)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">類型</span>{' '}
+                  {LINE_LABEL[(active.lineType || 'rent') as LineType]}
+                </div>
+                <div>
+                  <span className="text-muted-foreground">房號</span> {active.roomNumber ?? '—'}
+                </div>
+              </div>
+            )}
             <div>
-              <Label>預計 / 已收</Label>
+              <Label>預計（應收）／已收</Label>
               <p className="text-sm text-muted-foreground">
                 {active
-                  ? `${formatCents(active.totalAmount)}／${formatCents(active.paidAmount)}`
+                  ? `${formatCents(active.totalAmount ?? 0)}／${formatCents(active.paidAmount ?? 0)}`
                   : '—'}
               </p>
             </div>
