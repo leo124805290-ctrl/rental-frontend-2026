@@ -145,13 +145,19 @@ export default function PaymentsPage() {
 
   const [meterReadings, setMeterReadings] = useState<MeterReadingRow[]>([]);
   const [meterLoading, setMeterLoading] = useState(false);
-  const [meterValue, setMeterValue] = useState('');
-  const [meterDate, setMeterDate] = useState(() => localTodayYmd());
+  /** 與收款視窗共用：本期抄表度數／日期（與上方抄表區雙向同步） */
+  const [meterDraftValue, setMeterDraftValue] = useState('');
+  const [meterDraftDate, setMeterDraftDate] = useState(() => localTodayYmd());
   const [meterSubmitting, setMeterSubmitting] = useState(false);
 
   const selectedRoom = useMemo(
     () => rooms.find((r) => r.id === selectedRoomId) ?? null,
     [rooms, selectedRoomId],
+  );
+
+  const collectRoom = useMemo(
+    () => (active ? rooms.find((r) => r.id === active.roomId) ?? null : null),
+    [active, rooms],
   );
 
   useEffect(() => {
@@ -247,20 +253,11 @@ export default function PaymentsPage() {
         const canCombine =
           active.lineType !== 'deposit' &&
           Boolean(rent) &&
-          Boolean(elec) &&
           rentRest > 0 &&
-          elecRest > 0;
-        setCombineRentElectricity(canCombine);
-        if (canCombine) {
-          setCollectYuan(String(Math.ceil((rentRest + elecRest) / 100)));
-        } else {
-          setCollectYuan(String(Math.ceil(restCents(active) / 100)));
-        }
+          (!elec || elecRest > 0);
+        setCombineRentElectricity(Boolean(canCombine));
       } catch (e) {
         console.error(e);
-        if (!cancelled) {
-          setCollectYuan(String(Math.ceil(restCents(active) / 100)));
-        }
       } finally {
         if (!cancelled) setCollectDialogLoading(false);
       }
@@ -270,11 +267,114 @@ export default function PaymentsPage() {
     };
   }, [collectOpen, active]);
 
+  /** 收款視窗：租金待收 + 電費（帳單或依本期度數預估） */
+  const collectDialogMeterPreview = useMemo(() => {
+    if (!active || active.lineType === 'deposit') return null;
+    const rate = collectRoom?.electricityRate ?? 350;
+    const lastReading = collectDialogReadings[0]?.readingValue;
+    const inputNum = parseFloat(meterDraftValue.replace(/,/g, ''));
+    const hasInput = meterDraftValue.trim() !== '' && !Number.isNaN(inputNum);
+    const rent = collectPairRent;
+    const elecBill = collectPairElec;
+    const rentRest = rent ? restCents(rent) : 0;
+
+    if (elecBill && Number(elecBill.totalAmount) > 0) {
+      const er = restCents(elecBill);
+      return {
+        kind: 'bill' as const,
+        rentRestCents: rentRest,
+        elecRestCents: er,
+        totalSuggestCents: rentRest + er,
+        usage: null as number | null,
+        feePreviewCents: null as number | null,
+        error: null as string | null,
+      };
+    }
+
+    if (!hasInput) {
+      return {
+        kind: 'preview' as const,
+        rentRestCents: rentRest,
+        elecRestCents: 0,
+        totalSuggestCents: rentRest,
+        usage: null as number | null,
+        feePreviewCents: null as number | null,
+        error: null as string | null,
+        baselineHint: lastReading === undefined,
+      };
+    }
+    if (lastReading === undefined) {
+      return {
+        kind: 'preview' as const,
+        rentRestCents: rentRest,
+        elecRestCents: 0,
+        totalSuggestCents: rentRest,
+        usage: null,
+        feePreviewCents: null,
+        error: null,
+        baselineHint: true,
+      };
+    }
+    const usage = inputNum - lastReading;
+    if (usage < 0) {
+      return {
+        kind: 'preview' as const,
+        rentRestCents: rentRest,
+        elecRestCents: 0,
+        totalSuggestCents: rentRest,
+        usage,
+        feePreviewCents: null,
+        error: '本次抄表度數不可小於上期（最新一筆）',
+        baselineHint: false,
+      };
+    }
+    const feePreviewCents = estimateElectricityFeeCents(usage, rate);
+    return {
+      kind: 'preview' as const,
+      rentRestCents: rentRest,
+      elecRestCents: feePreviewCents,
+      totalSuggestCents: rentRest + feePreviewCents,
+      usage,
+      feePreviewCents,
+      error: null,
+      baselineHint: false,
+    };
+  }, [
+    active,
+    collectRoom,
+    collectDialogReadings,
+    meterDraftValue,
+    collectPairRent,
+    collectPairElec,
+  ]);
+
+  useEffect(() => {
+    if (!collectOpen || !active || collectDialogLoading) return;
+    if (active.lineType === 'deposit') {
+      setCollectYuan(String(Math.ceil(restCents(active) / 100)));
+      return;
+    }
+    if (!combineRentElectricity) {
+      setCollectYuan(String(Math.ceil(restCents(active) / 100)));
+      return;
+    }
+    const p = collectDialogMeterPreview;
+    if (p && !p.error && p.totalSuggestCents !== undefined) {
+      setCollectYuan(String(Math.ceil(p.totalSuggestCents / 100)));
+    }
+  }, [
+    collectOpen,
+    active,
+    collectDialogLoading,
+    combineRentElectricity,
+    collectDialogMeterPreview,
+  ]);
+
   useEffect(() => {
     if (selectedRoomId === 'all' || !selectedRoomId) {
       setMeterReadings([]);
-      setMeterValue('');
-      setMeterDate(localTodayYmd());
+      setMeterDraftValue('');
+      setMeterDraftDate(localTodayYmd());
       return;
     }
     (async () => {
@@ -355,12 +455,12 @@ export default function PaymentsPage() {
       alert('請先選擇單一房間');
       return;
     }
-    const v = parseFloat(meterValue.replace(/,/g, ''));
+    const v = parseFloat(meterDraftValue.replace(/,/g, ''));
     if (Number.isNaN(v) || v < 0) {
       alert('請輸入有效的本次抄表度數');
       return;
     }
-    if (!meterDate) {
+    if (!meterDraftDate) {
       alert('請選擇抄表日期');
       return;
     }
@@ -379,7 +479,7 @@ export default function PaymentsPage() {
           roomId: selectedRoomId,
           paymentMonth: selectedMonth,
           readingValue: v,
-          readingDate: new Date(meterDate + 'T12:00:00').toISOString(),
+          readingDate: new Date(meterDraftDate + 'T12:00:00').toISOString(),
           tenantId: tid || undefined,
         },
       );
@@ -390,7 +490,7 @@ export default function PaymentsPage() {
       } else {
         alert('已記錄抄表並產生電費帳單');
       }
-      setMeterValue('');
+      setMeterDraftValue('');
       const list = await api.get<MeterReadingRow[]>(
         `/api/meter-readings?roomId=${encodeURIComponent(selectedRoomId)}`,
       );
@@ -409,8 +509,8 @@ export default function PaymentsPage() {
     const latest = meterReadings[0];
     const prevVal = latest?.readingValue;
     const prevDate = latest?.readingDate;
-    const inputNum = parseFloat(meterValue.replace(/,/g, ''));
-    const hasInput = meterValue.trim() !== '' && !Number.isNaN(inputNum);
+    const inputNum = parseFloat(meterDraftValue.replace(/,/g, ''));
+    const hasInput = meterDraftValue.trim() !== '' && !Number.isNaN(inputNum);
     if (!hasInput) {
       return {
         rate,
@@ -442,13 +542,39 @@ export default function PaymentsPage() {
       feeCents,
       isFirstBaseline: false,
     };
-  }, [meterReadings, meterValue, selectedRoom]);
+  }, [meterReadings, meterDraftValue, selectedRoom]);
 
   const openCollect = (p: PaymentRow) => {
     setActive(p);
     setCollectMethod('cash');
     setCollectNotes('');
+    if (selectedRoomId !== p.roomId) {
+      setMeterDraftValue('');
+      setMeterDraftDate(localTodayYmd());
+    }
     setCollectOpen(true);
+  };
+
+  const refreshMeterForRoom = async (roomId: string) => {
+    try {
+      const list = await api.get<MeterReadingRow[]>(
+        `/api/meter-readings?roomId=${encodeURIComponent(roomId)}`,
+      );
+      if (selectedRoomId === roomId) {
+        setMeterReadings(Array.isArray(list) ? list : []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchActiveTenantId = async (roomId: string) => {
+    const tenantRes = await api.get<unknown[]>(
+      `/api/tenants?roomId=${encodeURIComponent(roomId)}&status=active`,
+    );
+    return Array.isArray(tenantRes) && tenantRes[0] && typeof tenantRes[0] === 'object'
+      ? String((tenantRes[0] as { id?: string }).id ?? '')
+      : '';
   };
 
   const confirmCollect = async () => {
@@ -458,26 +584,80 @@ export default function PaymentsPage() {
       alert('請輸入有效金額（元）');
       return;
     }
-    const cents = Math.round(yuan * 100);
+    let cents = Math.round(yuan * 100);
     setCollectSubmitting(true);
     try {
       const common = {
         paymentMethod: collectMethod,
         notes: collectNotes || undefined,
       };
-      const rent = collectPairRent;
-      const elec = collectPairElec;
+
+      if (active.lineType === 'deposit') {
+        await api.patch(`/api/payments/${active.id}/pay`, {
+          amount: cents,
+          ...common,
+        });
+        setCollectOpen(false);
+        setActive(null);
+        await loadRows();
+        return;
+      }
+
+      let rent = collectPairRent;
+      let elec = collectPairElec;
+
+      if (combineRentElectricity && rent && restCents(rent) > 0 && !elec) {
+        const v = parseFloat(meterDraftValue.replace(/,/g, ''));
+        if (Number.isNaN(v) || v < 0) {
+          alert('請輸入「本次抄表度數」以產生電費帳單；若只收租金請取消勾選「一併收取租金＋電費」。');
+          return;
+        }
+        if (!meterDraftDate) {
+          alert('請選擇抄表日期');
+          return;
+        }
+        const tid = await fetchActiveTenantId(active.roomId);
+        const res = await api.post<{ mode?: string }>('/api/payments/electricity-with-reading', {
+          roomId: active.roomId,
+          paymentMonth: active.paymentMonth,
+          readingValue: v,
+          readingDate: new Date(meterDraftDate + 'T12:00:00').toISOString(),
+          tenantId: tid || undefined,
+        });
+        if (res && typeof res === 'object' && 'mode' in res && res.mode === 'baseline') {
+          alert(
+            '此次為基準抄表，尚未產生電費帳單。將依您輸入的金額僅沖收租金；電費請待下次抄表後再收。',
+          );
+          await api.patch(`/api/payments/${rent.id}/pay`, {
+            amount: Math.min(cents, restCents(rent)),
+            ...common,
+          });
+          await refreshMeterForRoom(active.roomId);
+          setMeterDraftValue('');
+          setCollectOpen(false);
+          setActive(null);
+          await loadRows();
+          return;
+        }
+        const rows = await api.get<PaymentRow[]>(
+          `/api/payments?roomId=${encodeURIComponent(active.roomId)}&month=${encodeURIComponent(active.paymentMonth)}`,
+        );
+        const arr = Array.isArray(rows) ? rows : [];
+        rent = arr.find((r) => r.lineType === 'rent') ?? rent;
+        elec = arr.find((r) => r.lineType === 'electricity') ?? null;
+        await refreshMeterForRoom(active.roomId);
+      }
+
       const rentRest = rent ? restCents(rent) : 0;
       const elecRest = elec ? restCents(elec) : 0;
-      const canCombine =
+      const canCombinePay =
         combineRentElectricity &&
-        active.lineType !== 'deposit' &&
         rent &&
         elec &&
         rentRest > 0 &&
         elecRest > 0;
 
-      if (canCombine) {
+      if (canCombinePay && rent && elec) {
         let left = cents;
         const payRent = Math.min(left, rentRest);
         if (payRent > 0) {
@@ -506,6 +686,8 @@ export default function PaymentsPage() {
           ...common,
         });
       }
+
+      setMeterDraftValue('');
       setCollectOpen(false);
       setActive(null);
       await loadRows();
@@ -628,7 +810,7 @@ export default function PaymentsPage() {
               抄表與電費（本頁完成）
             </CardTitle>
             <CardDescription>
-              帳單月份請與上方一致。公式：用量(度) ＝ 本次抄表度數 − 上一筆度數；應收電費 ＝ 用量 × 每度單價。產生後會出現在下方列表，與月租一併收款。
+              與下方「收款」視窗共用同一組度數／日期，可擇一處填寫。公式：用量＝本次−上期；應收電費＝用量×每度單價。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -673,8 +855,8 @@ export default function PaymentsPage() {
                       min={0}
                       step={1}
                       placeholder="例如 12580"
-                      value={meterValue}
-                      onChange={(e) => setMeterValue(e.target.value)}
+                      value={meterDraftValue}
+                      onChange={(e) => setMeterDraftValue(e.target.value)}
                     />
                   </div>
                   <div className="space-y-2">
@@ -682,8 +864,8 @@ export default function PaymentsPage() {
                     <Input
                       id="meter-d"
                       type="date"
-                      value={meterDate}
-                      onChange={(e) => setMeterDate(e.target.value)}
+                      value={meterDraftDate}
+                      onChange={(e) => setMeterDraftDate(e.target.value)}
                     />
                   </div>
                 </div>
@@ -855,7 +1037,7 @@ export default function PaymentsPage() {
           <DialogHeader>
             <DialogTitle>收款</DialogTitle>
             <DialogDescription>
-              可對齊下方抄表與同月租金／電費一併收款；沖帳順序為先租金、再電費。金額以「元」輸入。
+              帶入上期度數後輸入本期度數，系統會顯示應收電費與「租金＋電費」合計。與頁面上方抄表區同步，無須重填。沖帳順序：先租金、再電費。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
@@ -881,62 +1063,96 @@ export default function PaymentsPage() {
               </div>
             )}
 
-            {!collectDialogLoading && active && (
-              <div className="rounded-md border border-amber-200/80 bg-amber-50/50 px-3 py-2 text-sm">
-                <div className="mb-1 font-medium text-amber-900">電費抄表（本房）</div>
-                {collectDialogReadings.length >= 2 ? (
-                  (() => {
-                    const newer = collectDialogReadings[0];
-                    const older = collectDialogReadings[1];
-                    if (!newer || !older) return null;
-                    return (
-                      <>
-                        <div className="grid gap-1 sm:grid-cols-2">
-                          <div>
-                            <span className="text-muted-foreground">上期度數（較舊）</span>
-                            <p className="font-medium">
-                              {older.readingValue} 度
-                              <span className="ml-1 text-xs font-normal text-muted-foreground">
-                                {formatDate(older.readingDate, 'short')}
-                              </span>
-                            </p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">本期度數（最新）</span>
-                            <p className="font-medium">
-                              {newer.readingValue} 度
-                              <span className="ml-1 text-xs font-normal text-muted-foreground">
-                                {formatDate(newer.readingDate, 'short')}
-                              </span>
-                            </p>
-                          </div>
-                        </div>
-                        <p className="mt-1 text-muted-foreground">
-                          期間用量（參考）：{' '}
-                          <span className="font-medium text-foreground">
-                            {newer.readingValue - older.readingValue} 度
-                          </span>
-                        </p>
-                      </>
-                    );
-                  })()
-                ) : collectDialogReadings.length === 1 ? (
-                  <p className="text-muted-foreground">
-                    僅一筆抄表，尚無法對照「上期／本期」；請於收租頁上方補抄表後再產電費帳單。
-                  </p>
-                ) : (
-                  <p className="text-muted-foreground">尚無抄表紀錄；請於頁面上方建立抄表。</p>
+            {!collectDialogLoading && active && active.lineType !== 'deposit' && (
+              <div className="rounded-md border border-amber-200/80 bg-amber-50/50 px-3 py-3 text-sm">
+                <div className="mb-2 font-medium text-amber-900">電費抄表（與上方「抄表與電費」同步）</div>
+                <div className="mb-2 grid gap-2 text-muted-foreground">
+                  <div>
+                    上期度數（本房最新一筆讀數）
+                    <p className="font-medium text-foreground">
+                      {collectDialogReadings[0] != null
+                        ? `${collectDialogReadings[0].readingValue} 度（${formatDate(collectDialogReadings[0].readingDate, 'short')}）`
+                        : '—（尚無紀錄；首次可只建基準，下次再算電費）'}
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <Label htmlFor="dlg-meter">本次抄表度數</Label>
+                      <Input
+                        id="dlg-meter"
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder="輸入本次度數"
+                        value={meterDraftValue}
+                        onChange={(e) => setMeterDraftValue(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label htmlFor="dlg-meter-d">抄表日期</Label>
+                      <Input
+                        id="dlg-meter-d"
+                        type="date"
+                        value={meterDraftDate}
+                        onChange={(e) => setMeterDraftDate(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+                {collectDialogMeterPreview?.error && (
+                  <p className="text-sm text-destructive">{collectDialogMeterPreview.error}</p>
                 )}
+                <div className="space-y-1 rounded-md border bg-background px-2 py-2">
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">待收租金</span>
+                    <span className="font-medium">
+                      {formatCents(collectDialogMeterPreview?.rentRestCents ?? 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-muted-foreground">
+                      {collectDialogMeterPreview?.kind === 'bill' ? '應收電費（帳單）' : '應收電費（預估）'}
+                    </span>
+                    <span className="font-medium">
+                      {collectDialogMeterPreview?.kind === 'bill'
+                        ? formatCents(collectDialogMeterPreview.elecRestCents)
+                        : collectDialogMeterPreview?.feePreviewCents != null
+                          ? formatCents(collectDialogMeterPreview.feePreviewCents)
+                          : '—'}
+                    </span>
+                  </div>
+                  {collectDialogMeterPreview?.usage != null && (
+                    <p className="text-xs text-muted-foreground">
+                      期間用量（參考）約 {collectDialogMeterPreview.usage} 度；每度{' '}
+                      {((collectRoom?.electricityRate ?? 350) / 100).toLocaleString('zh-TW', {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 2,
+                      })}{' '}
+                      元
+                    </p>
+                  )}
+                  {collectDialogMeterPreview?.baselineHint && (
+                    <p className="text-xs text-muted-foreground">
+                      尚無上期可比較時，本次送出將只建基準抄表，不產電費帳單。
+                    </p>
+                  )}
+                  <div className="flex justify-between gap-2 border-t pt-2 font-medium">
+                    <span>租金＋電費合計（建議）</span>
+                    <span>
+                      {collectDialogMeterPreview && !collectDialogMeterPreview.error
+                        ? formatCents(collectDialogMeterPreview.totalSuggestCents)
+                        : '—'}
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
 
             {!collectDialogLoading &&
               active &&
-              collectPairRent &&
-              collectPairElec &&
               active.lineType !== 'deposit' &&
-              restCents(collectPairRent) > 0 &&
-              restCents(collectPairElec) > 0 && (
+              collectPairRent &&
+              restCents(collectPairRent) > 0 && (
                 <label className="flex cursor-pointer items-start gap-2 rounded-md border bg-background px-3 py-2 text-sm">
                   <input
                     type="checkbox"
@@ -945,39 +1161,16 @@ export default function PaymentsPage() {
                     onChange={(e) => {
                       const v = e.target.checked;
                       setCombineRentElectricity(v);
-                      if (!active) return;
-                      if (v && collectPairRent && collectPairElec) {
-                        const rr = restCents(collectPairRent);
-                        const er = restCents(collectPairElec);
-                        if (rr > 0 && er > 0) {
-                          setCollectYuan(String(Math.ceil((rr + er) / 100)));
-                        }
-                      } else {
-                        setCollectYuan(String(Math.ceil(restCents(active) / 100)));
-                      }
                     }}
                   />
                   <span>
-                    <span className="font-medium">本次同時收取同月租金 + 電費</span>
+                    <span className="font-medium">一併收取同月租金＋電費</span>
                     <span className="mt-1 block text-muted-foreground">
-                      沖帳順序：先沖月租欠款，再沖電費欠款。預設金額為兩項待收之和。
+                      若尚無電費帳單，確認收款時會先依上方度數寫入抄表並產生電費帳單，再依金額沖租金與電費。
                     </span>
                   </span>
                 </label>
               )}
-
-            {!collectDialogLoading && active && collectPairRent && collectPairElec && active.lineType !== 'deposit' && (
-              <div className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
-                <div>
-                  同月租金：待收 {formatCents(restCents(collectPairRent))}／應收{' '}
-                  {formatCents(collectPairRent.totalAmount ?? 0)}
-                </div>
-                <div>
-                  同月電費：待收 {formatCents(restCents(collectPairElec))}／應收{' '}
-                  {formatCents(collectPairElec.totalAmount ?? 0)}
-                </div>
-              </div>
-            )}
 
             {!collectDialogLoading && active && (
               <div>
