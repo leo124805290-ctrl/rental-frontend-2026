@@ -584,7 +584,7 @@ export default function PaymentsPage() {
       alert('請輸入有效金額（元）');
       return;
     }
-    let cents = Math.round(yuan * 100);
+    const cents = Math.round(yuan * 100);
     setCollectSubmitting(true);
     try {
       const common = {

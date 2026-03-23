@@ -27,26 +27,27 @@ interface RoomFormProps {
   propertyId: string;
 }
 
+const DEFAULT_ROOM_FORM_DATA: RoomFormData = {
+  roomNumber: '',
+  floor: 1,
+  monthlyRent: 0,
+  depositAmount: 0,
+  electricityRate: 350, // 預設 3.5 元/度
+  status: 'vacant',
+};
+
 export default function RoomForm({
   isOpen,
   onClose,
   onSubmit,
   initialData,
   isEditing = false,
-  propertyId: _propertyId,
+  propertyId,
 }: RoomFormProps) {
-  // 初始化表單資料
-  const defaultFormData: RoomFormData = {
-    roomNumber: '',
-    floor: 1,
-    monthlyRent: 0,
-    depositAmount: 0,
-    electricityRate: 350, // 預設 3.5 元/度
-    status: 'vacant',
-  };
+  void propertyId;
 
   const [formData, setFormData] = useState<RoomFormData>({
-    ...defaultFormData,
+    ...DEFAULT_ROOM_FORM_DATA,
     ...initialData,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -56,7 +57,7 @@ export default function RoomForm({
   useEffect(() => {
     if (isOpen) {
       setFormData({
-        ...defaultFormData,
+        ...DEFAULT_ROOM_FORM_DATA,
         ...initialData,
       });
       setErrors({});

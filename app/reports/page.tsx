@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -96,16 +96,7 @@ export default function ReportsPage() {
     })();
   }, []);
 
-  // 載入報表資料
-  useEffect(() => {
-    if (activeTab === 'monthly') {
-      loadMonthlyReport();
-    } else {
-      loadSummaryReport();
-    }
-  }, [activeTab, selectedProperty, selectedMonth]);
-
-  const loadMonthlyReport = async () => {
+  const loadMonthlyReport = useCallback(async () => {
     if (!selectedProperty) {
       setMonthlyReport(null);
       return;
@@ -124,9 +115,9 @@ export default function ReportsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedProperty, selectedMonth]);
 
-  const loadSummaryReport = async () => {
+  const loadSummaryReport = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
@@ -140,7 +131,15 @@ export default function ReportsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedMonth]);
+
+  useEffect(() => {
+    if (activeTab === 'monthly') {
+      void loadMonthlyReport();
+    } else {
+      void loadSummaryReport();
+    }
+  }, [activeTab, selectedProperty, selectedMonth, loadMonthlyReport, loadSummaryReport]);
 
   // 圖表資料準備
   const getIncomeChartData = () => {

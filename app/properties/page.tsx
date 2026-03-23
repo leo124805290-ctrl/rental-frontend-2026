@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,12 +41,7 @@ export default function PropertiesPage() {
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
-  // 載入物業資料
-  useEffect(() => {
-    loadProperties();
-  }, [showArchived]);
-
-  const loadProperties = async () => {
+  const loadProperties = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
@@ -61,7 +56,11 @@ export default function PropertiesPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [showArchived]);
+
+  useEffect(() => {
+    void loadProperties();
+  }, [loadProperties]);
 
   const handleAddProperty = () => {
     setEditingProperty(null);

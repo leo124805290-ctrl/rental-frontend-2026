@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -107,14 +107,7 @@ export default function PropertyDetailPage() {
   });
   const [savingCheckin, setSavingCheckin] = useState(false);
 
-  // 載入物業詳情和房間列表
-  useEffect(() => {
-    if (propertyId) {
-      loadPropertyAndRooms();
-    }
-  }, [propertyId]);
-
-  const loadPropertyAndRooms = async () => {
+  const loadPropertyAndRooms = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
@@ -133,7 +126,13 @@ export default function PropertyDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [propertyId]);
+
+  useEffect(() => {
+    if (propertyId) {
+      void loadPropertyAndRooms();
+    }
+  }, [propertyId, loadPropertyAndRooms]);
 
   const handleRestoreProperty = async () => {
     if (!propertyId || !property) return;

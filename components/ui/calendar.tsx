@@ -10,12 +10,16 @@ interface CalendarProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onSe
 }
 
 const Calendar = React.forwardRef<HTMLDivElement, CalendarProps>(
-  ({ className, mode = "single", selected, onSelect, initialFocus, ...props }, ref) => {
+  (props, ref) => {
+    const { className, mode, selected, onSelect, initialFocus, ...rest } = props;
+    void mode;
+    void selected;
+    void initialFocus;
     return (
       <div
         ref={ref}
         className={cn("p-3 pointer-events-auto", className)}
-        {...props}
+        {...rest}
       >
         <div className="flex flex-col space-y-4">
           <div className="text-center text-sm text-muted-foreground">
