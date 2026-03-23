@@ -109,6 +109,10 @@ function displayStatus(p: PaymentRow): { label: string; className: string } {
   return { label: '已結清', className: 'bg-emerald-100 text-emerald-900 border-emerald-200' };
 }
 
+function restCents(p: PaymentRow): number {
+  return Math.max(0, Number(p.totalAmount || 0) - Number(p.paidAmount || 0));
+}
+
 export default function PaymentsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +123,8 @@ export default function PaymentsPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>(
     new Date().toISOString().slice(0, 7),
   );
+  /** 全部 | 待收（含部分收款）| 已結清 */
+  const [collectionFilter, setCollectionFilter] = useState<'all' | 'open' | 'settled'>('all');
 
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [loadingList, setLoadingList] = useState(false);
@@ -130,6 +136,12 @@ export default function PaymentsPage() {
   const [collectMethod, setCollectMethod] = useState('cash');
   const [collectNotes, setCollectNotes] = useState('');
   const [collectSubmitting, setCollectSubmitting] = useState(false);
+
+  const [collectDialogLoading, setCollectDialogLoading] = useState(false);
+  const [collectDialogReadings, setCollectDialogReadings] = useState<MeterReadingRow[]>([]);
+  const [collectPairRent, setCollectPairRent] = useState<PaymentRow | null>(null);
+  const [collectPairElec, setCollectPairElec] = useState<PaymentRow | null>(null);
+  const [combineRentElectricity, setCombineRentElectricity] = useState(false);
 
   const [meterReadings, setMeterReadings] = useState<MeterReadingRow[]>([]);
   const [meterLoading, setMeterLoading] = useState(false);
@@ -189,6 +201,9 @@ export default function PaymentsPage() {
       if (selectedRoomId && selectedRoomId !== 'all') {
         qs.set('roomId', selectedRoomId);
       }
+      if (collectionFilter !== 'all') {
+        qs.set('collection', collectionFilter);
+      }
       const list = await api.get<PaymentRow[]>(`/api/payments?${qs.toString()}`);
       setRows(Array.isArray(list) ? list : []);
     } catch (e) {
@@ -198,11 +213,62 @@ export default function PaymentsPage() {
     } finally {
       setLoadingList(false);
     }
-  }, [selectedPropertyId, selectedRoomId, selectedMonth]);
+  }, [selectedPropertyId, selectedRoomId, selectedMonth, collectionFilter]);
 
   useEffect(() => {
     void loadRows();
   }, [loadRows]);
+
+  useEffect(() => {
+    if (!collectOpen || !active) return;
+    let cancelled = false;
+    (async () => {
+      setCollectDialogLoading(true);
+      setCollectPairRent(null);
+      setCollectPairElec(null);
+      setCollectDialogReadings([]);
+      try {
+        const readList = await api.get<MeterReadingRow[]>(
+          `/api/meter-readings?roomId=${encodeURIComponent(active.roomId)}`,
+        );
+        const monthRows = await api.get<PaymentRow[]>(
+          `/api/payments?roomId=${encodeURIComponent(active.roomId)}&month=${encodeURIComponent(active.paymentMonth)}`,
+        );
+        if (cancelled) return;
+        const arr = Array.isArray(readList) ? readList : [];
+        setCollectDialogReadings(arr);
+        const rows = Array.isArray(monthRows) ? monthRows : [];
+        const rent = rows.find((r) => r.lineType === 'rent') ?? null;
+        const elec = rows.find((r) => r.lineType === 'electricity') ?? null;
+        setCollectPairRent(rent);
+        setCollectPairElec(elec);
+        const rentRest = rent ? restCents(rent) : 0;
+        const elecRest = elec ? restCents(elec) : 0;
+        const canCombine =
+          active.lineType !== 'deposit' &&
+          Boolean(rent) &&
+          Boolean(elec) &&
+          rentRest > 0 &&
+          elecRest > 0;
+        setCombineRentElectricity(canCombine);
+        if (canCombine) {
+          setCollectYuan(String(Math.ceil((rentRest + elecRest) / 100)));
+        } else {
+          setCollectYuan(String(Math.ceil(restCents(active) / 100)));
+        }
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) {
+          setCollectYuan(String(Math.ceil(restCents(active) / 100)));
+        }
+      } finally {
+        if (!cancelled) setCollectDialogLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [collectOpen, active]);
 
   useEffect(() => {
     if (selectedRoomId === 'all' || !selectedRoomId) {
@@ -380,8 +446,6 @@ export default function PaymentsPage() {
 
   const openCollect = (p: PaymentRow) => {
     setActive(p);
-    const rest = Math.max(0, (p.totalAmount || 0) - (p.paidAmount || 0));
-    setCollectYuan(String(Math.ceil(rest / 100)));
     setCollectMethod('cash');
     setCollectNotes('');
     setCollectOpen(true);
@@ -397,11 +461,51 @@ export default function PaymentsPage() {
     const cents = Math.round(yuan * 100);
     setCollectSubmitting(true);
     try {
-      await api.patch(`/api/payments/${active.id}/pay`, {
-        amount: cents,
+      const common = {
         paymentMethod: collectMethod,
         notes: collectNotes || undefined,
-      });
+      };
+      const rent = collectPairRent;
+      const elec = collectPairElec;
+      const rentRest = rent ? restCents(rent) : 0;
+      const elecRest = elec ? restCents(elec) : 0;
+      const canCombine =
+        combineRentElectricity &&
+        active.lineType !== 'deposit' &&
+        rent &&
+        elec &&
+        rentRest > 0 &&
+        elecRest > 0;
+
+      if (canCombine) {
+        let left = cents;
+        const payRent = Math.min(left, rentRest);
+        if (payRent > 0) {
+          await api.patch(`/api/payments/${rent.id}/pay`, {
+            amount: payRent,
+            ...common,
+          });
+          left -= payRent;
+        }
+        const payElec = Math.min(left, elecRest);
+        if (payElec > 0) {
+          await api.patch(`/api/payments/${elec.id}/pay`, {
+            amount: payElec,
+            ...common,
+          });
+          left -= payElec;
+        }
+        if (left > 0) {
+          alert(
+            `本次實收扣除租金與電費後，尚有約 ${(left / 100).toLocaleString('zh-TW')} 元無法沖帳（兩項應收已滿足或已沖完）。`,
+          );
+        }
+      } else {
+        await api.patch(`/api/payments/${active.id}/pay`, {
+          amount: cents,
+          ...common,
+        });
+      }
       setCollectOpen(false);
       setActive(null);
       await loadRows();
@@ -452,7 +556,7 @@ export default function PaymentsPage() {
           <CardTitle>篩選</CardTitle>
           <CardDescription>{propertyName || '請選擇物業'}</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="space-y-2">
             <Label>物業</Label>
             <Select value={selectedPropertyId || '__'} onValueChange={setSelectedPropertyId}>
@@ -491,6 +595,22 @@ export default function PaymentsPage() {
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
             />
+          </div>
+          <div className="space-y-2">
+            <Label>狀態</Label>
+            <Select
+              value={collectionFilter}
+              onValueChange={(v) => setCollectionFilter(v as 'all' | 'open' | 'settled')}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部</SelectItem>
+                <SelectItem value="open">待收（含部分收款）</SelectItem>
+                <SelectItem value="settled">已結清</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-end">
             <Button className="w-full" variant="outline" onClick={() => void loadRows()}>
@@ -718,15 +838,33 @@ export default function PaymentsPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={collectOpen} onOpenChange={setCollectOpen}>
-        <DialogContent>
+      <Dialog
+        open={collectOpen}
+        onOpenChange={(o) => {
+          setCollectOpen(o);
+          if (!o) {
+            setActive(null);
+            setCollectDialogReadings([]);
+            setCollectPairRent(null);
+            setCollectPairElec(null);
+            setCombineRentElectricity(false);
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>收款</DialogTitle>
             <DialogDescription>
-              僅輸入「本次實收」；預計金額為系統帶入。可多次收款累加實收。金額以「元」輸入。
+              可對齊下方抄表與同月租金／電費一併收款；沖帳順序為先租金、再電費。金額以「元」輸入。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
+            {collectDialogLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                載入抄表與同月帳單…
+              </div>
+            )}
             {active && (
               <div className="rounded-md bg-muted/60 px-3 py-2 text-sm">
                 <div>
@@ -734,7 +872,7 @@ export default function PaymentsPage() {
                   <span className="font-medium">{formatBillMonth(active.paymentMonth)}</span>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">類型</span>{' '}
+                  <span className="text-muted-foreground">目前操作列</span>{' '}
                   {LINE_LABEL[(active.lineType || 'rent') as LineType]}
                 </div>
                 <div>
@@ -742,14 +880,113 @@ export default function PaymentsPage() {
                 </div>
               </div>
             )}
-            <div>
-              <Label>預計（應收）／已收</Label>
-              <p className="text-sm text-muted-foreground">
-                {active
-                  ? `${formatCents(active.totalAmount ?? 0)}／${formatCents(active.paidAmount ?? 0)}`
-                  : '—'}
-              </p>
-            </div>
+
+            {!collectDialogLoading && active && (
+              <div className="rounded-md border border-amber-200/80 bg-amber-50/50 px-3 py-2 text-sm">
+                <div className="mb-1 font-medium text-amber-900">電費抄表（本房）</div>
+                {collectDialogReadings.length >= 2 ? (
+                  (() => {
+                    const newer = collectDialogReadings[0];
+                    const older = collectDialogReadings[1];
+                    if (!newer || !older) return null;
+                    return (
+                      <>
+                        <div className="grid gap-1 sm:grid-cols-2">
+                          <div>
+                            <span className="text-muted-foreground">上期度數（較舊）</span>
+                            <p className="font-medium">
+                              {older.readingValue} 度
+                              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                {formatDate(older.readingDate, 'short')}
+                              </span>
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">本期度數（最新）</span>
+                            <p className="font-medium">
+                              {newer.readingValue} 度
+                              <span className="ml-1 text-xs font-normal text-muted-foreground">
+                                {formatDate(newer.readingDate, 'short')}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+                        <p className="mt-1 text-muted-foreground">
+                          期間用量（參考）：{' '}
+                          <span className="font-medium text-foreground">
+                            {newer.readingValue - older.readingValue} 度
+                          </span>
+                        </p>
+                      </>
+                    );
+                  })()
+                ) : collectDialogReadings.length === 1 ? (
+                  <p className="text-muted-foreground">
+                    僅一筆抄表，尚無法對照「上期／本期」；請於收租頁上方補抄表後再產電費帳單。
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">尚無抄表紀錄；請於頁面上方建立抄表。</p>
+                )}
+              </div>
+            )}
+
+            {!collectDialogLoading &&
+              active &&
+              collectPairRent &&
+              collectPairElec &&
+              active.lineType !== 'deposit' &&
+              restCents(collectPairRent) > 0 &&
+              restCents(collectPairElec) > 0 && (
+                <label className="flex cursor-pointer items-start gap-2 rounded-md border bg-background px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 rounded border-input"
+                    checked={combineRentElectricity}
+                    onChange={(e) => {
+                      const v = e.target.checked;
+                      setCombineRentElectricity(v);
+                      if (!active) return;
+                      if (v && collectPairRent && collectPairElec) {
+                        const rr = restCents(collectPairRent);
+                        const er = restCents(collectPairElec);
+                        if (rr > 0 && er > 0) {
+                          setCollectYuan(String(Math.ceil((rr + er) / 100)));
+                        }
+                      } else {
+                        setCollectYuan(String(Math.ceil(restCents(active) / 100)));
+                      }
+                    }}
+                  />
+                  <span>
+                    <span className="font-medium">本次同時收取同月租金 + 電費</span>
+                    <span className="mt-1 block text-muted-foreground">
+                      沖帳順序：先沖月租欠款，再沖電費欠款。預設金額為兩項待收之和。
+                    </span>
+                  </span>
+                </label>
+              )}
+
+            {!collectDialogLoading && active && collectPairRent && collectPairElec && active.lineType !== 'deposit' && (
+              <div className="rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
+                <div>
+                  同月租金：待收 {formatCents(restCents(collectPairRent))}／應收{' '}
+                  {formatCents(collectPairRent.totalAmount ?? 0)}
+                </div>
+                <div>
+                  同月電費：待收 {formatCents(restCents(collectPairElec))}／應收{' '}
+                  {formatCents(collectPairElec.totalAmount ?? 0)}
+                </div>
+              </div>
+            )}
+
+            {!collectDialogLoading && active && (
+              <div>
+                <Label>本列預計（應收）／已收</Label>
+                <p className="text-sm text-muted-foreground">
+                  {`${formatCents(active.totalAmount ?? 0)}／${formatCents(active.paidAmount ?? 0)}`}
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="amt">本次實收（元）</Label>
               <Input
