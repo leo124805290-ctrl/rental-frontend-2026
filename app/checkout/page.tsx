@@ -13,10 +13,11 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CalendarIcon, Home, Users, CheckCircle, History, Calculator } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCents, formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 interface TenantApi {
   id: string;
@@ -26,6 +27,7 @@ interface TenantApi {
   nameVi?: string;
   phone?: string;
   checkInDate?: string;
+  expectedCheckoutDate?: string;
   status?: string;
   createdAt?: string;
 }
@@ -48,7 +50,25 @@ interface PropertyApi {
   name: string;
 }
 
-type DepositAction = 'return' | 'keep' | 'none';
+/** 與 GET /api/checkout/settlements 回傳列一致（金額為分） */
+interface CheckoutSettlementRow {
+  id: string;
+  tenantId: string;
+  roomId: string;
+  checkoutDate: string;
+  daysStayed: number;
+  dailyRent: number;
+  rentDue: number;
+  electricityFee: number;
+  otherDeductions: number;
+  totalDue: number;
+  prepaidAmount: number;
+  depositAmount: number;
+  refundAmount: number;
+  settlementStatus: string;
+  notes?: string | null;
+  createdAt?: string;
+}
 
 export default function CheckoutPage() {
   const [tenants, setTenants] = useState<TenantApi[]>([]);
@@ -59,8 +79,9 @@ export default function CheckoutPage() {
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   const [checkoutDate, setCheckoutDate] = useState<Date>(new Date());
   const [finalMeter, setFinalMeter] = useState<string>('');
-  const [depositAction, setDepositAction] = useState<DepositAction>('return');
-  const [depositAmount, setDepositAmount] = useState<string>('0');
+  const [lastReading, setLastReading] = useState<number | null>(null);
+  const [otherDeductionsYuan, setOtherDeductionsYuan] = useState<string>('0');
+  const [settlements, setSettlements] = useState<CheckoutSettlementRow[]>([]);
   const [settlementNotes, setSettlementNotes] = useState<string>('');
   const [showSettlementDialog, setShowSettlementDialog] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -75,11 +96,13 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
-      const [tenantList, roomList, propertyList] = await Promise.all([
+      const [tenantList, roomList, propertyList, settList] = await Promise.all([
         api.get<any[]>('/api/tenants'),
         api.get<any[]>('/api/rooms'),
         api.get<any[]>('/api/properties'),
+        api.get<any[]>('/api/checkout/settlements').catch(() => []),
       ]);
+      setSettlements(Array.isArray(settList) ? (settList as CheckoutSettlementRow[]) : []);
 
       const roomsMap: Record<string, RoomApi> = {};
       for (const r of roomList) {
@@ -122,6 +145,9 @@ export default function CheckoutPage() {
         nameVi: t.nameVi != null ? String(t.nameVi) : '',
         phone: t.phone != null ? String(t.phone) : '',
         checkInDate: String(t.checkInDate ?? t.contract_start ?? t.createdAt ?? new Date().toISOString()),
+        ...(t.expectedCheckoutDate
+          ? { expectedCheckoutDate: String(t.expectedCheckoutDate) }
+          : {}),
         status: String(t.status ?? (t.is_active === false ? 'checked_out' : 'active')),
         ...(t.createdAt ? { createdAt: String(t.createdAt) } : {}),
       }));
@@ -142,8 +168,14 @@ export default function CheckoutPage() {
 
   const activeTenants = useMemo(
     () => tenants.filter((t) => t.status !== 'checked_out'),
-    [tenants]
+    [tenants],
   );
+
+  const tenantById = useMemo(() => {
+    const m = new Map<string, TenantApi>();
+    for (const t of tenants) m.set(t.id, t);
+    return m;
+  }, [tenants]);
 
   const selectedTenant = useMemo(
     () => tenants.find((t) => t.id === selectedTenantId) ?? null,
@@ -160,14 +192,34 @@ export default function CheckoutPage() {
     return properties[selectedTenant.propertyId]?.name || '';
   }, [properties, selectedTenant]);
 
+  useEffect(() => {
+    if (!selectedTenant?.roomId) {
+      setLastReading(null);
+      return;
+    }
+    (async () => {
+      try {
+        const list = await api.get<
+          Array<{ readingValue: number; readingDate: string }>
+        >(`/api/meter-readings?roomId=${encodeURIComponent(selectedTenant.roomId)}`);
+        const sorted = [...(Array.isArray(list) ? list : [])].sort(
+          (a, b) => new Date(b.readingDate).getTime() - new Date(a.readingDate).getTime(),
+        );
+        setLastReading(sorted[0]?.readingValue ?? null);
+      } catch {
+        setLastReading(null);
+      }
+    })();
+  }, [selectedTenant?.roomId]);
+
   const meterPreview = useMemo(() => {
-    const prev = Number(selectedRoom?.previousMeter ?? selectedRoom?.currentMeter ?? 0);
+    const prev = lastReading ?? 0;
     const finalVal = Number(finalMeter || 0);
     if (!finalMeter) return null;
     if (Number.isNaN(finalVal) || finalVal < 0) return null;
     const diff = finalVal - prev;
     return diff >= 0 ? { prev, finalVal, usage: diff } : null;
-  }, [selectedRoom, finalMeter]);
+  }, [lastReading, finalMeter]);
 
   const electricityRateYuan = useMemo(() => {
     if (!selectedRoom) return 6;
@@ -203,33 +255,23 @@ export default function CheckoutPage() {
     const finalVal = parseInt(finalMeter, 10);
     if (Number.isNaN(finalVal)) return;
 
-    const depAmount = parseInt(depositAmount, 10);
-    const safeDepAmount = Number.isNaN(depAmount) ? 0 : depAmount;
-
     try {
       setSubmitting(true);
       setError(null);
 
       await api.post('/api/checkout/complete', {
-        // 後端可能用 snake_case；同時帶兩套 key，讓後端任一解析方式都能吃到
+        tenantId: selectedTenant.id,
         roomId: selectedRoom.id,
-        room_id: selectedRoom.id,
         checkoutDate: checkoutDateStr,
-        checkout_date: checkoutDateStr,
-        finalMeter: finalVal,
-        final_meter: finalVal,
-        depositAction,
-        deposit_action: depositAction,
-        depositAmount: safeDepAmount,
-        deposit_amount: safeDepAmount,
-        note: settlementNotes || undefined,
+        finalMeterReading: finalVal,
+        otherDeductions: parseFloat(otherDeductionsYuan) || 0,
+        notes: settlementNotes || undefined,
       });
 
       setShowSettlementDialog(false);
       setSelectedTenantId('');
       setFinalMeter('');
-      setDepositAmount('0');
-      setDepositAction('return');
+      setOtherDeductionsYuan('0');
       setSettlementNotes('');
       await loadData();
       alert('退租完成');
@@ -264,7 +306,7 @@ export default function CheckoutPage() {
       <div className="flex flex-col space-y-6">
         <PageHeader
           title="退租結算管理"
-          description="處理租客退租（會寫入退租電表、選擇是否退還押金）"
+          description="處理租客退租：必填退租電表度數、可填其他扣款；送出後寫入結算單並清空房間"
           actions={
             <Button variant="outline" onClick={() => void loadData()}>
               <History className="mr-2 h-4 w-4" />
@@ -361,29 +403,24 @@ export default function CheckoutPage() {
                               placeholder="例如：1250"
                             />
                             <p className="text-xs text-muted-foreground">
-                              上期：{String(selectedRoom.previousMeter ?? selectedRoom.currentMeter ?? 0)}
-                              {meterPreview ? `，用量 ${meterPreview.usage} 度，預估電費 ${formatCurrency(electricityFeePreview || 0)}` : ''}
+                              上期（最近抄表）：{lastReading != null ? String(lastReading) : '—'}
+                              {meterPreview
+                                ? `，用量 ${meterPreview.usage} 度，預估電費 ${formatCurrency(electricityFeePreview || 0)}`
+                                : ''}
                             </p>
                           </div>
                           <div className="space-y-2">
-                            <Label>押金處理</Label>
-                            <Select value={depositAction} onValueChange={(v) => setDepositAction(v as DepositAction)}>
-                              <SelectTrigger>
-                                <SelectValue placeholder="選擇押金處理方式" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="return">退還押金</SelectItem>
-                                <SelectItem value="keep">沒收押金</SelectItem>
-                                <SelectItem value="none">不處理</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <Label htmlFor="other-deductions">其他扣款（元）</Label>
                             <Input
+                              id="other-deductions"
                               type="number"
-                              value={depositAmount}
-                              onChange={(e) => setDepositAmount(e.target.value)}
-                              placeholder="退還押金金額"
-                              disabled={depositAction !== 'return'}
+                              min={0}
+                              step="0.01"
+                              value={otherDeductionsYuan}
+                              onChange={(e) => setOtherDeductionsYuan(e.target.value)}
+                              placeholder="0"
                             />
+                            <p className="text-xs text-muted-foreground">會併入退租應付總額（後端以元換算成分）</p>
                           </div>
                         </div>
 
@@ -444,20 +481,16 @@ export default function CheckoutPage() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">入住中租客</p>
-                    <p className="text-2xl font-bold">
-                      {activeTenants.filter(t => t.status === 'active').length}
-                    </p>
+                    <p className="text-sm font-medium">可辦退租（入住中）</p>
+                    <p className="text-2xl font-bold">{activeTenants.length}</p>
                   </div>
                   <Home className="h-8 w-8 text-muted-foreground" />
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between">
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">退租中租客</p>
-                    <p className="text-2xl font-bold">
-                      {activeTenants.filter(t => t.status === 'checking_out').length}
-                    </p>
+                    <p className="text-sm font-medium">歷史結算筆數</p>
+                    <p className="text-2xl font-bold">{settlements.length}</p>
                   </div>
                   <Users className="h-8 w-8 text-muted-foreground" />
                 </div>
@@ -492,6 +525,59 @@ export default function CheckoutPage() {
             </Card>
           </div>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              退租結算紀錄
+            </CardTitle>
+            <CardDescription>金額以下表為元（後端以分儲存）</CardDescription>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            {settlements.length === 0 ? (
+              <p className="text-sm text-muted-foreground">尚無結算紀錄</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>退租日</TableHead>
+                    <TableHead>房號</TableHead>
+                    <TableHead>租客</TableHead>
+                    <TableHead className="text-right">應付總額</TableHead>
+                    <TableHead className="text-right">電費</TableHead>
+                    <TableHead className="text-right">其他扣款</TableHead>
+                    <TableHead className="text-right">應退</TableHead>
+                    <TableHead>狀態</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {settlements.map((s) => {
+                    const tn = tenantById.get(s.tenantId);
+                    const rn = rooms[s.roomId]?.roomNumber ?? '—';
+                    const name = tn?.nameZh || tn?.nameVi || '—';
+                    const checkout =
+                      typeof s.checkoutDate === 'string'
+                        ? s.checkoutDate
+                        : String(s.checkoutDate);
+                    return (
+                      <TableRow key={s.id}>
+                        <TableCell className="whitespace-nowrap">{formatDate(checkout)}</TableCell>
+                        <TableCell>{rn}</TableCell>
+                        <TableCell>{name}</TableCell>
+                        <TableCell className="text-right">{formatCents(s.totalDue)}</TableCell>
+                        <TableCell className="text-right">{formatCents(s.electricityFee)}</TableCell>
+                        <TableCell className="text-right">{formatCents(s.otherDeductions)}</TableCell>
+                        <TableCell className="text-right">{formatCents(s.refundAmount)}</TableCell>
+                        <TableCell>{s.settlementStatus}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* 確認結算對話框 */}
@@ -500,7 +586,7 @@ export default function CheckoutPage() {
           <DialogHeader>
             <DialogTitle>確認退租</DialogTitle>
             <DialogDescription>
-              請確認資訊無誤後提交（會寫入電費與押金退還紀錄）
+              請確認資訊無誤後提交（會寫入電表讀數、結算單與押金／預付沖帳）
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -512,11 +598,10 @@ export default function CheckoutPage() {
                   <div>房號：{selectedRoom.roomNumber}</div>
                   <div>物業：{selectedPropertyName || '—'}</div>
                   <div>退租：{checkoutDateStr}</div>
-                  <div>上期電表：{String(selectedRoom.previousMeter ?? selectedRoom.currentMeter ?? 0)}</div>
+                  <div>上期電表（最近抄表）：{lastReading != null ? String(lastReading) : '—'}</div>
                   <div>本期電表：{finalMeter || '—'}</div>
                   <div>預估電費：{formatCurrency(electricityFeePreview || 0)}</div>
-                  <div>押金處理：{depositAction}</div>
-                  <div>押金金額：{formatCurrency(parseInt(depositAmount || '0', 10) || 0)}</div>
+                  <div>其他扣款：{formatCurrency(parseFloat(otherDeductionsYuan || '0') || 0)}</div>
                 </div>
               </div>
             )}

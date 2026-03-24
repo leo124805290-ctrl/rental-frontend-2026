@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Download, Filter, TrendingUp, TrendingDown, DollarSign, Home, Users } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatCents } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
@@ -72,6 +72,19 @@ interface Property {
   name: string;
 }
 
+/** 電費帳單列（僅 lineType=electricity） */
+interface ElectricityPaymentRow {
+  totalAmount: number;
+  paidAmount: number;
+}
+
+/** 月報表頁「電費差異分析」用 */
+interface ElectricityDiff {
+  elecBilledCents: number;
+  elecCollectedCents: number;
+  utilityExpenseCents: number;
+}
+
 export default function ReportsPage() {
   const [monthlyReport, setMonthlyReport] = useState<MonthlyReport | null>(null);
   const [summaryReport, setSummaryReport] = useState<SummaryReport | null>(null);
@@ -83,6 +96,7 @@ export default function ReportsPage() {
   const [selectedProperty, setSelectedProperty] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [properties, setProperties] = useState<Property[]>([]);
+  const [electricityDiff, setElectricityDiff] = useState<ElectricityDiff | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -99,6 +113,7 @@ export default function ReportsPage() {
   const loadMonthlyReport = useCallback(async () => {
     if (!selectedProperty) {
       setMonthlyReport(null);
+      setElectricityDiff(null);
       return;
     }
 
@@ -106,11 +121,37 @@ export default function ReportsPage() {
     setError(null);
 
     try {
-      const data = await api.get<MonthlyReport>(`/api/reports/monthly?propertyId=${selectedProperty}&month=${selectedMonth}`);
+      const [data, elecRows] = await Promise.all([
+        api.get<MonthlyReport>(`/api/reports/monthly?propertyId=${selectedProperty}&month=${selectedMonth}`),
+        api
+          .get<ElectricityPaymentRow[]>(
+            `/api/payments?propertyId=${encodeURIComponent(selectedProperty)}&month=${encodeURIComponent(selectedMonth)}&lineType=electricity`,
+          )
+          .catch(() => [] as ElectricityPaymentRow[]),
+      ]);
       setMonthlyReport(data);
+
+      const elecBilledCents = (Array.isArray(elecRows) ? elecRows : []).reduce(
+        (s, p) => s + Number(p.totalAmount || 0),
+        0,
+      );
+      const elecCollectedCents = (Array.isArray(elecRows) ? elecRows : []).reduce(
+        (s, p) => s + Number(p.paidAmount || 0),
+        0,
+      );
+      const utilityExpenseCents = (data.expense?.breakdown ?? [])
+        .filter((e) => e.category === 'utilities')
+        .reduce((s, e) => s + Number(e.amount || 0), 0);
+
+      setElectricityDiff({
+        elecBilledCents,
+        elecCollectedCents,
+        utilityExpenseCents,
+      });
     } catch (error) {
       console.error(error);
       setMonthlyReport(null);
+      setElectricityDiff(null);
       setError(error instanceof Error ? error.message : '載入月報表失敗');
     } finally {
       setIsLoading(false);
@@ -348,6 +389,55 @@ export default function ReportsPage() {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* 電費差異分析（與 payments utilities 支出對照） */}
+                {electricityDiff && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>電費差異分析</CardTitle>
+                      <CardDescription>
+                        租客電費為該月、該物業之電費帳單列（應收／實收）；台電等支出為同月支出明細中「utilities」類別合計，區間與上方月報表一致。
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {electricityDiff.elecBilledCents === 0 &&
+                      electricityDiff.elecCollectedCents === 0 &&
+                      electricityDiff.utilityExpenseCents === 0 ? (
+                        <p className="text-sm text-muted-foreground">尚無該月電費帳單或 utilities 支出資料</p>
+                      ) : (
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                          <div className="rounded-lg border bg-muted/40 p-4">
+                            <p className="text-sm text-muted-foreground">租客電費應收（帳單）</p>
+                            <p className="text-xl font-semibold">{formatCents(electricityDiff.elecBilledCents)}</p>
+                          </div>
+                          <div className="rounded-lg border bg-muted/40 p-4">
+                            <p className="text-sm text-muted-foreground">租客電費實收</p>
+                            <p className="text-xl font-semibold text-green-700">
+                              {formatCents(electricityDiff.elecCollectedCents)}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border bg-muted/40 p-4">
+                            <p className="text-sm text-muted-foreground">utilities 支出（台電等）</p>
+                            <p className="text-xl font-semibold text-red-700">
+                              {formatCents(electricityDiff.utilityExpenseCents)}
+                            </p>
+                          </div>
+                          <div className="rounded-lg border bg-primary/10 p-4">
+                            <p className="text-sm text-muted-foreground">差異（實收 − utilities 支出）</p>
+                            <p className="text-xl font-semibold">
+                              {formatCents(
+                                electricityDiff.elecCollectedCents - electricityDiff.utilityExpenseCents,
+                              )}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              正值表示向租客收取的電費高於同期繳付台電／水電帳單
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* 圖表區 */}
                 <div className="grid gap-6 lg:grid-cols-2">
