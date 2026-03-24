@@ -10,7 +10,8 @@ import { Building, MapPin, Phone, Calendar, Home, Users, Plus, Edit, Trash2, Arr
 import Link from 'next/link';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
-import { addOneYearToIsoDate } from '@/lib/checkin-dates';
+import { calcContractEnd, isoDateOnly } from '@/lib/contract-dates';
+import { ContractSignModal } from '@/components/contract-sign-modal';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -66,12 +67,21 @@ interface RoomFormData {
   electricityPrice: number; // 元/度，送出時轉 electricityRate(分)
 }
 
+interface TenantRow {
+  id: string;
+  roomId: string;
+  nameZh: string;
+  checkInDate: string;
+  expectedCheckoutDate: string | null;
+}
+
 interface CheckinFormData {
   name: string;
   phone: string;
   passportNumber: string;
   checkInDate: string;
-  expectedCheckoutDate: string;
+  contractMonths: number;
+  initialMeterReading: number;
 }
 
 export default function PropertyDetailPage() {
@@ -89,10 +99,9 @@ export default function PropertyDetailPage() {
     floor: 1,
     monthlyRent: 0,
     depositAmount: 0,
-    electricityPrice: 3.5,
+    electricityPrice: 6.0,
   });
   const [savingRoom, setSavingRoom] = useState(false);
-  const [savingStatusRoomId, setSavingStatusRoomId] = useState<string | null>(null);
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [checkinRoom, setCheckinRoom] = useState<Room | null>(null);
   const [checkinForm, setCheckinForm] = useState<CheckinFormData>(() => {
@@ -102,10 +111,23 @@ export default function PropertyDetailPage() {
       phone: '',
       passportNumber: '',
       checkInDate: today,
-      expectedCheckoutDate: addOneYearToIsoDate(today),
+      contractMonths: 12,
+      initialMeterReading: 0,
     };
   });
   const [savingCheckin, setSavingCheckin] = useState(false);
+  const [tenants, setTenants] = useState<TenantRow[]>([]);
+  const [contractOpen, setContractOpen] = useState(false);
+  const [contractCtx, setContractCtx] = useState<{
+    tenantId: string;
+    room: Room;
+    tenantName: string;
+    startYmd: string;
+    endYmd: string;
+  } | null>(null);
+  const [viewContractOpen, setViewContractOpen] = useState(false);
+  const [viewContractHtml, setViewContractHtml] = useState('');
+  const [viewContractSig, setViewContractSig] = useState<string | null>(null);
 
   const loadPropertyAndRooms = useCallback(async () => {
     setIsLoading(true);
@@ -113,13 +135,17 @@ export default function PropertyDetailPage() {
 
     try {
       // 後端目前沒有 `GET /api/properties/:id`，改用全量物業列表找出對應 id
-      const [props, r] = await Promise.all([
+      const [props, r, t] = await Promise.all([
         api.get<Property[]>(`/api/properties?include_archived=true`),
         api.get<Room[]>(`/api/rooms?propertyId=${encodeURIComponent(propertyId)}`),
+        api.get<TenantRow[]>(
+          `/api/tenants?propertyId=${encodeURIComponent(propertyId)}&status=active`,
+        ),
       ]);
       const p = props.find((x) => String(x.id) === String(propertyId)) ?? null;
       setProperty(p);
       setRooms(r);
+      setTenants(Array.isArray(t) ? t : []);
     } catch (err) {
       setError('載入資料失敗，請稍後再試');
       console.error('載入物業詳情錯誤:', err);
@@ -181,7 +207,7 @@ export default function PropertyDetailPage() {
       floor: 1,
       monthlyRent: 0,
       depositAmount: 0,
-      electricityPrice: 3.5,
+      electricityPrice: 6.0,
     });
     setRoomFormOpen(true);
   };
@@ -210,21 +236,6 @@ export default function PropertyDetailPage() {
     }
   };
 
-  const handleRoomStatusChange = async (roomId: string, newStatus: Room['status']) => {
-    setSavingStatusRoomId(roomId);
-    try {
-      const updated = await api.patch<Room>(`/api/rooms/${roomId}/status`, { status: newStatus });
-      setRooms(prev => prev.map(room => 
-        room.id === roomId ? updated : room
-      ));
-    } catch (err) {
-      console.error('更新房間狀態失敗', err);
-      alert('更新狀態失敗，請稍後再試');
-    } finally {
-      setSavingStatusRoomId(null);
-    }
-  };
-
   const handleRoomFormChange = (field: keyof RoomFormData, value: string | number) => {
     setRoomFormData(prev => ({
       ...prev,
@@ -240,7 +251,8 @@ export default function PropertyDetailPage() {
       phone: '',
       passportNumber: '',
       checkInDate: today,
-      expectedCheckoutDate: addOneYearToIsoDate(today),
+      contractMonths: 12,
+      initialMeterReading: 0,
     });
     setCheckinOpen(true);
   };
@@ -252,17 +264,9 @@ export default function PropertyDetailPage() {
     }));
   };
 
-  const handleCheckinDateChange = (value: string) => {
-    setCheckinForm((prev) => ({
-      ...prev,
-      checkInDate: value,
-      expectedCheckoutDate: addOneYearToIsoDate(value),
-    }));
-  };
-
   const handleSubmitCheckin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!checkinRoom) return;
+    if (!checkinRoom || !propertyId) return;
 
     const name = checkinForm.name.trim();
     if (!name) {
@@ -274,24 +278,34 @@ export default function PropertyDetailPage() {
       return;
     }
 
+    const end = calcContractEnd(checkinForm.checkInDate, checkinForm.contractMonths);
+    const expectedCheckoutDate = isoDateOnly(end);
+
     const rentAmount = checkinRoom.monthlyRent;
     const depositAmount = checkinRoom.depositAmount;
 
     setSavingCheckin(true);
     try {
-      await api.post('/api/checkin/complete', {
+      const result = await api.post<{ tenant: { id: string } }>('/api/checkin/complete', {
         roomId: checkinRoom.id,
+        propertyId,
         nameZh: name,
         nameVi: name,
         phone: checkinForm.phone.trim(),
         passportNumber: checkinForm.passportNumber.trim() || undefined,
         checkInDate: checkinForm.checkInDate,
-        expectedCheckoutDate: checkinForm.expectedCheckoutDate,
+        expectedCheckoutDate,
         paymentType: 'full',
         rentAmount,
         depositAmount,
         paidAmount: 0,
         paymentAmount: 0,
+      });
+
+      await api.post('/api/meter-readings', {
+        roomId: checkinRoom.id,
+        readingValue: Number(checkinForm.initialMeterReading) || 0,
+        readingDate: checkinForm.checkInDate,
       });
 
       setRooms((prev) =>
@@ -300,12 +314,24 @@ export default function PropertyDetailPage() {
         ),
       );
 
+      await loadPropertyAndRooms();
+
       setCheckinOpen(false);
+      const tid = result.tenant?.id;
+      if (tid) {
+        setContractCtx({
+          tenantId: tid,
+          room: checkinRoom,
+          tenantName: name,
+          startYmd: checkinForm.checkInDate,
+          endYmd: expectedCheckoutDate,
+        });
+        setContractOpen(true);
+      }
       setCheckinRoom(null);
-      router.push('/payments');
     } catch (err) {
       console.error('入住失敗', err);
-      alert('入住失敗，請稍後再試');
+      alert(err instanceof Error ? err.message : '入住失敗，請稍後再試');
     } finally {
       setSavingCheckin(false);
     }
@@ -495,10 +521,35 @@ export default function PropertyDetailPage() {
 
   const occupancyRate = roomStats.total ? Math.round((roomStats.occupied / roomStats.total) * 100) : 0;
 
+  const openViewContract = (room: Room) => {
+    const t = tenants.find((x) => x.roomId === room.id);
+    if (!t) {
+      alert('找不到租客資料');
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(`contract_${t.id}`);
+      if (!raw) {
+        alert('尚無已簽署合約資料');
+        return;
+      }
+      const parsed = JSON.parse(raw) as {
+        contractHtml: string;
+        signatureBase64?: string;
+      };
+      setViewContractHtml(parsed.contractHtml);
+      setViewContractSig(parsed.signatureBase64 ?? null);
+      setViewContractOpen(true);
+    } catch {
+      alert('讀取合約失敗');
+    }
+  };
+
   return (
     <PageShell>
       <PageHeader
-        title={property.name}
+        title={`${property.name} — 房間管理`}
+        description={`總 ${roomStats.total} 間｜已入住 ${roomStats.occupied}｜空房 ${roomStats.vacant}｜維修 ${roomStats.maintenance}｜入住率 ${occupancyRate}%｜月租金收入 $${monthlyRentIncome.toLocaleString('zh-TW')}`}
         actions={
           <div className="flex items-center gap-2">
             <Link href="/properties">
@@ -725,63 +776,123 @@ export default function PropertyDetailPage() {
                           {(room.electricityRate / 100).toFixed(2)} 元/度
                         </span>
                       </div>
-                      {room.status === 'occupied' && room.tenantName && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-gray-600">租客</span>
-                          <span className="font-medium text-gray-900">
-                            {room.tenantName}
-                          </span>
-                        </div>
+                      {room.status === 'occupied' && (
+                        <>
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-600">👤 租客</span>
+                            <span className="font-medium text-gray-900">
+                              {tenants.find((t) => t.roomId === room.id)?.nameZh ??
+                                room.tenantName ??
+                                '—'}
+                            </span>
+                          </div>
+                          {(() => {
+                            const t = tenants.find((x) => x.roomId === room.id);
+                            if (!t) return null;
+                            const fmt = (iso: string) => {
+                              const d = new Date(iso);
+                              return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+                            };
+                            return (
+                              <>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">入住</span>
+                                  <span className="font-medium">{fmt(t.checkInDate)}</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-gray-600">到期</span>
+                                  <span className="font-medium">
+                                    {t.expectedCheckoutDate ? fmt(t.expectedCheckoutDate) : '—'}
+                                  </span>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEditRoom(room)}
-                      >
-                        <Edit className="h-4 w-4 mr-2" />
-                        編輯
-                      </Button>
-                      {room.status === 'vacant' && (
+                    {room.status === 'vacant' && (
+                      <div className="flex flex-wrap gap-2">
                         <Button
-                          variant="default"
+                          type="button"
                           size="sm"
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
                           onClick={() => openCheckinModal(room)}
                         >
                           安排入住
                         </Button>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                        onClick={() => handleDeleteRoom(room)}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        刪除
-                      </Button>
-                    </div>
-
-                    {/* 快速狀態切換 */}
-                    <div className="pt-3 border-t">
-                      <p className="text-sm text-gray-600 mb-2">快速切換狀態：</p>
-                      <div className="grid grid-cols-4 gap-2">
-                        {Object.entries(roomStatusConfig).map(([status, config]) => (
-                          <Button
-                            key={status}
-                            size="sm"
-                            variant={room.status === status ? "default" : "outline"}
-                            className={`text-xs ${room.status === status ? '' : 'text-gray-600'}`}
-                            onClick={() => handleRoomStatusChange(room.id, status as Room['status'])}
-                            disabled={room.status === status || !!savingStatusRoomId}
-                          >
-                            {config.label}
-                          </Button>
-                        ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditRoom(room)}
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          編輯
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 border-red-200 hover:bg-red-50"
+                          onClick={() => handleDeleteRoom(room)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          刪除
+                        </Button>
                       </div>
-                    </div>
+                    )}
+
+                    {room.status === 'occupied' && (
+                      <div className="flex flex-wrap gap-2">
+                        <Link href="/checkout">
+                          <Button type="button" variant="outline" size="sm">
+                            辦理退租
+                          </Button>
+                        </Link>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openViewContract(room)}
+                        >
+                          查看合約
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditRoom(room)}
+                        >
+                          編輯
+                        </Button>
+                      </div>
+                    )}
+
+                    {room.status !== 'vacant' && room.status !== 'occupied' && (
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditRoom(room)}
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          編輯
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 border-red-200 hover:bg-red-50"
+                          onClick={() => handleDeleteRoom(room)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          刪除
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}
@@ -934,18 +1045,50 @@ export default function PropertyDetailPage() {
                   id="checkInDate"
                   type="date"
                   value={checkinForm.checkInDate}
-                  onChange={(e) => handleCheckinDateChange(e.target.value)}
+                  onChange={(e) =>
+                    setCheckinForm((prev) => ({ ...prev, checkInDate: e.target.value }))
+                  }
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="expectedCheckoutDate">合約到期日</Label>
-                <Input
-                  id="expectedCheckoutDate"
-                  type="date"
-                  value={checkinForm.expectedCheckoutDate}
+                <Label htmlFor="contractMonths">合約期限</Label>
+                <select
+                  id="contractMonths"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={checkinForm.contractMonths}
                   onChange={(e) =>
-                    handleCheckinFieldChange('expectedCheckoutDate', e.target.value)
+                    setCheckinForm((prev) => ({
+                      ...prev,
+                      contractMonths: Number(e.target.value) || 1,
+                    }))
+                  }
+                >
+                  <option value={1}>1 個月</option>
+                  <option value={3}>3 個月</option>
+                  <option value={6}>6 個月</option>
+                  <option value={12}>1 年</option>
+                </select>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>合約到期日（自動計算）</Label>
+                <Input
+                  readOnly
+                  value={isoDateOnly(calcContractEnd(checkinForm.checkInDate, checkinForm.contractMonths))}
+                />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="initialMeterReading">入住電錶度數</Label>
+                <Input
+                  id="initialMeterReading"
+                  type="number"
+                  min={0}
+                  value={checkinForm.initialMeterReading || ''}
+                  onChange={(e) =>
+                    setCheckinForm((prev) => ({
+                      ...prev,
+                      initialMeterReading: Number(e.target.value) || 0,
+                    }))
                   }
                   required
                 />
@@ -965,6 +1108,51 @@ export default function PropertyDetailPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {contractCtx && property && (
+        <ContractSignModal
+          open={contractOpen}
+          onClose={() => {
+            setContractOpen(false);
+            setContractCtx(null);
+          }}
+          tenantId={contractCtx.tenantId}
+          roomId={contractCtx.room.id}
+          tenantName={contractCtx.tenantName}
+          roomNumber={contractCtx.room.roomNumber}
+          propertyAddress={property.address}
+          startDateYmd={contractCtx.startYmd}
+          endDateYmd={contractCtx.endYmd}
+          monthlyRentYuan={contractCtx.room.monthlyRent}
+          depositYuan={contractCtx.room.depositAmount}
+          electricityYuanPerDeg={contractCtx.room.electricityRate / 100}
+        />
+      )}
+
+      <Dialog open={viewContractOpen} onOpenChange={setViewContractOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>合約</DialogTitle>
+            <DialogDescription>已簽署之合約內容與簽名</DialogDescription>
+          </DialogHeader>
+          <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: viewContractHtml }} />
+          {viewContractSig ? (
+            <div className="mt-4">
+              <p className="text-sm font-medium mb-2">乙方簽名</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={viewContractSig} alt="簽名" className="max-w-full border rounded" />
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setViewContractOpen(false)}>
+              關閉
+            </Button>
+            <Button type="button" onClick={() => window.print()}>
+              列印
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </PageShell>

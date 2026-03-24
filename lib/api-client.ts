@@ -3,13 +3,15 @@
  * 統一處理所有 API 請求、錯誤處理、認證標頭
  */
 
-// 基礎 API URL
+/** 規格書指定之後端基底網址（瀏覽器端請求仍走同源 `/api/*` 由 rewrites 代理） */
+export const API_BASE_URL =
+  // @ts-ignore - process.env 由 Next.js 提供
+  process.env['NEXT_PUBLIC_API_URL'] || 'https://taiwan-landlord-2026.zeabur.app';
+
 // 瀏覽器端優先走同源 `/api/*`（由 Next.js rewrites 代理到 Zeabur），避免 CORS。
 // 伺服器端（SSR/Route Handlers）則可直接打到後端網址。
 function getApiBaseUrl(): string {
-  // @ts-ignore - process.env 由 Next.js 提供
-  const envBase = process.env['NEXT_PUBLIC_API_URL'] || 'https://taiwan-landlord-2026.zeabur.app';
-  return typeof window === 'undefined' ? envBase : '';
+  return typeof window === 'undefined' ? API_BASE_URL : '';
 }
 
 // 請求逾時時間（毫秒）

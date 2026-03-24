@@ -4,23 +4,43 @@ import './globals.css';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
-import { LayoutDashboard, Building, Users, CreditCard, Gauge, LogOut, TrendingDown, TrendingUp, BarChart3, Wrench, Home, UserCog, Menu } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Building,
+  CreditCard,
+  LogOut,
+  Wallet,
+  BarChart3,
+  Gauge,
+  UserCog,
+  Menu,
+} from 'lucide-react';
 import { UserSessionMenu } from '@/components/app-shell/user-session-menu';
 
 const navItems = [
   { href: '/dashboard', label: '儀表板', icon: LayoutDashboard },
   { href: '/properties', label: '物業管理', icon: Building },
-  { href: '/rooms', label: '全部房間', icon: Home },
-  { href: '/tenants', label: '租客管理', icon: Users },
   { href: '/payments', label: '收租管理', icon: CreditCard },
-  { href: '/meter-readings', label: '抄電錶', icon: Gauge },
   { href: '/checkout', label: '退租結算', icon: LogOut },
-  { href: '/expenses', label: '支出管理', icon: TrendingDown },
-  { href: '/incomes', label: '補充收入', icon: TrendingUp },
+  { href: '/finance', label: '收支管理', icon: Wallet },
   { href: '/reports', label: '損益報表', icon: BarChart3 },
-  { href: '/maintenance', label: '維修紀錄', icon: Wrench },
+  { href: '/meter-history', label: '電錶歷史', icon: Gauge },
   { href: '/users', label: '使用者管理', icon: UserCog },
 ];
+
+function pageTitleFromPath(pathname: string): string {
+  if (pathname === '/' || pathname === '/dashboard') return '儀表板';
+  if (pathname === '/properties') return '物業管理';
+  if (pathname.startsWith('/properties/')) return '房間管理';
+  if (pathname === '/payments') return '收租管理';
+  if (pathname === '/checkout') return '退租結算';
+  if (pathname === '/finance') return '收支管理';
+  if (pathname === '/reports') return '損益報表';
+  if (pathname === '/meter-history') return '電錶歷史';
+  if (pathname === '/users') return '使用者管理';
+  if (pathname === '/login') return '登入';
+  return '租屋管理系統';
+}
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -28,9 +48,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   const isActive = (href: string) => {
     if (href === '/dashboard' && pathname === '/') return true;
-    // 物業列表僅 /properties；子路徑 /properties/[id] 不應高亮「物業管理」
     if (href === '/properties') return pathname === '/properties';
-    return pathname.startsWith(href);
+    return pathname === href || pathname.startsWith(`${href}/`);
   };
 
   if (pathname === '/login') {
@@ -41,22 +60,27 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  const pageTitle = pageTitleFromPath(pathname);
+  const todayStr = new Date().toLocaleDateString('zh-TW', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
   return (
     <html lang="zh-TW">
       <body className="min-h-screen bg-slate-100">
         <div className="flex h-screen">
-          {/* 側邊導航列 */}
           <aside
-            className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-slate-100 transform transition-transform duration-200 ease-in-out
+            className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white transform transition-transform duration-200 ease-in-out
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:z-auto`}
           >
-            {/* Logo 區 */}
             <div className="flex items-center justify-between h-16 px-4 border-b border-slate-700">
-              <Link href="/dashboard" className="flex items-center gap-2">
-                <Home className="w-6 h-6 text-blue-400" />
+              <Link href="/dashboard" className="flex items-center gap-2" onClick={() => setSidebarOpen(false)}>
+                <LayoutDashboard className="w-6 h-6 text-blue-400" />
                 <div>
                   <h1 className="text-sm font-bold tracking-tight">租屋管理系統</h1>
-                  <p className="text-xs text-slate-400">v2.0 • Taiwan Landlord</p>
+                  <p className="text-xs text-slate-400">Taiwan Landlord</p>
                 </div>
               </Link>
               <button
@@ -82,7 +106,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               </button>
             </div>
 
-            {/* 導航連結 */}
             <nav className="mt-4 px-2 space-y-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -108,7 +131,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </nav>
           </aside>
 
-          {/* 手機版遮罩層：點擊後關閉側邊欄 */}
           {sidebarOpen && (
             <div
               className="fixed inset-0 bg-black/40 z-40 lg:hidden"
@@ -117,11 +139,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             />
           )}
 
-          {/* 主要內容區 */}
-          <div className="flex-1 flex flex-col min-w-0">
-            {/* 頂部列 */}
-            <header className="h-16 bg-white/95 backdrop-blur border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-40">
-              <div className="flex items-center gap-3">
+          <div className="flex-1 flex flex-col min-w-0 bg-gray-50">
+            <header className="h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-40">
+              <div className="flex items-center gap-3 min-w-0">
                 <button
                   type="button"
                   className="lg:hidden p-2 rounded-lg hover:bg-slate-100"
@@ -130,30 +150,15 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 >
                   <Menu className="h-5 w-5 text-slate-700" />
                 </button>
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900 tracking-tight">
-                    租屋管理系統
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    Dashboard v2.0 · Taiwan Landlord
-                  </p>
-                </div>
+                <h2 className="text-lg font-semibold text-slate-900 truncate">{pageTitle}</h2>
               </div>
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="hidden sm:flex items-center gap-3 text-xs text-slate-500">
-                  <span className="rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 border border-emerald-100">
-                    API 連線：Zeabur（後端）
-                  </span>
-                  <span>今日 {new Date().toLocaleDateString('zh-TW')}</span>
-                </div>
+              <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                <span className="text-sm text-slate-600 hidden sm:inline">今日 {todayStr}</span>
                 <UserSessionMenu />
               </div>
             </header>
 
-            {/* 頁面內容 */}
-            <main className="flex-1 overflow-auto">
-              {children}
-            </main>
+            <main className="flex-1 overflow-auto bg-gray-50">{children}</main>
           </div>
         </div>
       </body>

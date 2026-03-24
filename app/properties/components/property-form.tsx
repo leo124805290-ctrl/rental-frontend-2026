@@ -74,13 +74,12 @@ export default function PropertyForm({
     const floors = Math.max(1, Math.min(50, Number(totalFloors) || 1));
     return Array.from({ length: floors }, (_, idx) => {
       const floor = idx + 1;
-      const monthlyRent = 5000 + (floor - 1) * 500;
       return {
         floor,
-        roomCount: 3,
-        monthlyRent,
-        depositAmount: monthlyRent,
-        electricityPrice: 3.5,
+        roomCount: 2,
+        monthlyRent: 5000,
+        depositAmount: 5000,
+        electricityPrice: 6.0,
       };
     });
   };
@@ -108,13 +107,12 @@ export default function PropertyForm({
         const floor = idx + 1;
         const existing = byFloor.get(floor);
         if (existing) return existing;
-        const monthlyRent = 5000 + (floor - 1) * 500;
         return {
           floor,
-          roomCount: 3,
-          monthlyRent,
-          depositAmount: monthlyRent,
-          electricityPrice: 3.5,
+          roomCount: 2,
+          monthlyRent: 5000,
+          depositAmount: 5000,
+          electricityPrice: 6.0,
         };
       });
     });

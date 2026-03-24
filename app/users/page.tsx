@@ -15,6 +15,8 @@ import { formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SETTINGS_KEYS, getSetting, setSetting } from '@/lib/settings';
 
 // 使用者資料類型（與後端 User 類型對應）
 interface UserData {
@@ -61,6 +63,20 @@ export default function UsersPage() {
   const [selectedRole, setSelectedRole] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [sysLandlord, setSysLandlord] = useState('甲方');
+  const [sysElec, setSysElec] = useState('6');
+  const [sysDailyDiv, setSysDailyDiv] = useState('30');
+  const [sysOverdue, setSysOverdue] = useState('5');
+  const [sysLaundry, setSysLaundry] = useState('50');
+
+  useEffect(() => {
+    setSysLandlord(getSetting(SETTINGS_KEYS.landlordName, '甲方'));
+    setSysElec(getSetting(SETTINGS_KEYS.defaultElectricityYuan, '6'));
+    setSysDailyDiv(getSetting(SETTINGS_KEYS.dailyRentDivisor, '30'));
+    setSysOverdue(getSetting(SETTINGS_KEYS.overdueGraceDays, '5'));
+    setSysLaundry(getSetting(SETTINGS_KEYS.laundryFeeYuan, '50'));
+  }, []);
 
   // 載入使用者資料
   useEffect(() => {
@@ -279,6 +295,13 @@ export default function UsersPage() {
           }
         />
 
+        <Tabs defaultValue="accounts" className="w-full space-y-4">
+          <TabsList>
+            <TabsTrigger value="accounts">帳號管理</TabsTrigger>
+            <TabsTrigger value="settings">系統設定</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="accounts" className="space-y-6 mt-4">
         {/* 統計卡片 */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
@@ -508,7 +531,53 @@ export default function UsersPage() {
             )}
           </CardContent>
         </Card>
-      
+          </TabsContent>
+
+          <TabsContent value="settings" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>系統設定</CardTitle>
+                <CardDescription>合約與計價預設值（存於此瀏覽器 localStorage）</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 max-w-lg">
+                <div className="space-y-2">
+                  <Label>甲方名稱（合約用）</Label>
+                  <Input value={sysLandlord} onChange={(e) => setSysLandlord(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>預設電費單價（元/度）</Label>
+                  <Input value={sysElec} onChange={(e) => setSysElec(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>日租金計算基數（天數）</Label>
+                  <Input value={sysDailyDiv} onChange={(e) => setSysDailyDiv(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>逾期警示天數（相對於當月幾號前）</Label>
+                  <Input value={sysOverdue} onChange={(e) => setSysOverdue(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>洗衣機收費（元/次）</Label>
+                  <Input value={sysLaundry} onChange={(e) => setSysLaundry(e.target.value)} />
+                </div>
+                <Button
+                  type="button"
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={() => {
+                    setSetting(SETTINGS_KEYS.landlordName, sysLandlord);
+                    setSetting(SETTINGS_KEYS.defaultElectricityYuan, sysElec);
+                    setSetting(SETTINGS_KEYS.dailyRentDivisor, sysDailyDiv);
+                    setSetting(SETTINGS_KEYS.overdueGraceDays, sysOverdue);
+                    setSetting(SETTINGS_KEYS.laundryFeeYuan, sysLaundry);
+                    alert('已儲存');
+                  }}
+                >
+                  儲存設定
+                </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
 
       {/* 新增/編輯使用者對話框 */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
