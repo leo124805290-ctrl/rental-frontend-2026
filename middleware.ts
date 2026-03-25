@@ -41,11 +41,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 開發階段：跳過認證檢查（方便測試）
-  // 正式上線時，請設定環境變數 SKIP_AUTH=false 來啟用認證
-  const skipAuth = process.env['SKIP_AUTH'] !== 'false'; // 預設為 true，除非明確設為 false
-  if (skipAuth) {
-    console.log('[Middleware] Skipping auth check for development');
+  // 僅當 SKIP_AUTH=true 時略過登入（本機除錯用）；預設一律檢查 cookie
+  if (process.env['SKIP_AUTH'] === 'true') {
     return NextResponse.next();
   }
 

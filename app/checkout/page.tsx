@@ -9,10 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Home, Users, CheckCircle, History, Calculator } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Home, Users, CheckCircle, History, Calculator } from 'lucide-react';
 import { formatCents, formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
@@ -50,6 +47,21 @@ interface PropertyApi {
   name: string;
 }
 
+interface DepositApiRow {
+  id: string;
+  amount: number;
+  type: string;
+  description?: string | null;
+}
+
+function localTodayYmd(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 /** 與 GET /api/checkout/settlements 回傳列一致（金額為分） */
 interface CheckoutSettlementRow {
   id: string;
@@ -77,7 +89,7 @@ export default function CheckoutPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
-  const [checkoutDate, setCheckoutDate] = useState<Date>(new Date());
+  const [checkoutDateYmd, setCheckoutDateYmd] = useState<string>(() => localTodayYmd());
   const [finalMeter, setFinalMeter] = useState<string>('');
   const [lastReading, setLastReading] = useState<number | null>(null);
   const [otherDeductionsYuan, setOtherDeductionsYuan] = useState<string>('0');
@@ -85,6 +97,9 @@ export default function CheckoutPage() {
   const [settlementNotes, setSettlementNotes] = useState<string>('');
   const [showSettlementDialog, setShowSettlementDialog] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [tenantDeposits, setTenantDeposits] = useState<DepositApiRow[]>([]);
+  const [prepaidSumCents, setPrepaidSumCents] = useState<number | null>(null);
+  const [financialLoading, setFinancialLoading] = useState(false);
 
   // 載入租客 / 房間 / 物業
   useEffect(() => {
@@ -212,6 +227,57 @@ export default function CheckoutPage() {
     })();
   }, [selectedTenant?.roomId]);
 
+  useEffect(() => {
+    if (!selectedTenantId || !selectedTenant?.roomId) {
+      setTenantDeposits([]);
+      setPrepaidSumCents(null);
+      return;
+    }
+    let cancelled = false;
+    setFinancialLoading(true);
+    void (async () => {
+      try {
+        const [depList, payList] = await Promise.all([
+          api.get<DepositApiRow[]>(
+            `/api/deposits?tenantId=${encodeURIComponent(selectedTenantId)}`,
+          ),
+          api.get<Array<{ paidAmount?: number }>>(
+            `/api/payments?tenantId=${encodeURIComponent(selectedTenantId)}&roomId=${encodeURIComponent(selectedTenant.roomId)}`,
+          ),
+        ]);
+        if (cancelled) return;
+        setTenantDeposits(Array.isArray(depList) ? depList : []);
+        const sum = (Array.isArray(payList) ? payList : []).reduce(
+          (s, p) => s + Number(p.paidAmount ?? 0),
+          0,
+        );
+        setPrepaidSumCents(sum);
+      } catch {
+        if (!cancelled) {
+          setTenantDeposits([]);
+          setPrepaidSumCents(null);
+        }
+      } finally {
+        if (!cancelled) setFinancialLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTenantId, selectedTenant?.roomId]);
+
+  const depositSummary = useMemo(() => {
+    const rows = tenantDeposits;
+    const sumType = (t: string) =>
+      rows.filter((d) => d.type === t).reduce((s, d) => s + Number(d.amount ?? 0), 0);
+    return {
+      /** 與後端 POST /checkout/complete 納入結算之押金一致：僅加總「收取」 */
+      collectedCents: sumType('收取'),
+      deductedCents: sumType('扣款'),
+      refundedCents: sumType('退還'),
+    };
+  }, [tenantDeposits]);
+
   const meterPreview = useMemo(() => {
     const prev = lastReading ?? 0;
     const trimmed = finalMeter.trim();
@@ -232,11 +298,6 @@ export default function CheckoutPage() {
     if (!meterPreview) return null;
     return Math.round(meterPreview.usage * electricityRateYuan);
   }, [meterPreview, electricityRateYuan]);
-
-  const checkoutDateStr = useMemo(
-    () => checkoutDate.toISOString().split('T')[0] ?? '',
-    [checkoutDate]
-  );
 
   const openConfirm = () => {
     if (!selectedTenant || !selectedRoom) {
@@ -270,7 +331,7 @@ export default function CheckoutPage() {
       await api.post('/api/checkout/complete', {
         tenantId: selectedTenant.id,
         roomId: selectedRoom.id,
-        checkoutDate: checkoutDateStr,
+        checkoutDate: checkoutDateYmd,
         finalMeterReading: finalVal,
         otherDeductions: parseFloat(otherDeductionsYuan) || 0,
         notes: settlementNotes || undefined,
@@ -278,6 +339,7 @@ export default function CheckoutPage() {
 
       setShowSettlementDialog(false);
       setSelectedTenantId('');
+      setCheckoutDateYmd(localTodayYmd());
       setFinalMeter('');
       setOtherDeductionsYuan('0');
       setSettlementNotes('');
@@ -371,6 +433,23 @@ export default function CheckoutPage() {
                           <div>物業：{selectedPropertyName || '—'}</div>
                           <div>入住日期：{formatDate(selectedTenant.checkInDate || '')}</div>
                           <div>月租金：{formatCurrency(Number(selectedRoom.monthlyRent || 0))}</div>
+                          <div>房間約定押金：{formatCurrency(Number(selectedRoom.depositAmount ?? 0))}</div>
+                          <div>
+                            已入帳押金（收取紀錄合計）：
+                            {financialLoading
+                              ? '載入中…'
+                              : formatCents(depositSummary.collectedCents)}
+                          </div>
+                          <div className="col-span-2 text-xs text-muted-foreground">
+                            結算時後端僅將「收取」類押金加總；若有「扣款／退還」請以紀錄為準。
+                            {depositSummary.deductedCents > 0 || depositSummary.refundedCents > 0
+                              ? ` 扣款 ${formatCents(depositSummary.deductedCents)}、已退還 ${formatCents(depositSummary.refundedCents)}。`
+                              : ''}
+                          </div>
+                          <div>
+                            已繳款合計（本房＋本租客）：
+                            {financialLoading ? '載入中…' : prepaidSumCents != null ? formatCents(prepaidSumCents) : '—'}
+                          </div>
                         </div>
                       </div>
 
@@ -380,26 +459,19 @@ export default function CheckoutPage() {
                         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           <div className="space-y-2">
                             <Label htmlFor="checkout-date">退租日期</Label>
-                            <Popover>
-                              <PopoverTrigger
-                                className={cn(
-                                  "inline-flex h-10 w-full items-center justify-start rounded-md border border-input bg-background px-3 py-2 text-sm font-normal ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
-                                  !checkoutDate && "text-muted-foreground"
-                                )}
-                                type="button"
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {checkoutDate ? formatDate(checkoutDate.toISOString()) : "選擇日期"}
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                  mode="single"
-                                  selected={checkoutDate}
-                                  onSelect={(date) => date && setCheckoutDate(date)}
-                                  initialFocus
-                                />
-                              </PopoverContent>
-                            </Popover>
+                            <Input
+                              id="checkout-date"
+                              type="date"
+                              value={checkoutDateYmd}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v) setCheckoutDateYmd(v);
+                              }}
+                              className="block w-full"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              以本地日曆日送出（YYYY-MM-DD），避免時區造成日期錯一天
+                            </p>
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="final-meter">退租電表度數</Label>
@@ -524,7 +596,9 @@ export default function CheckoutPage() {
                   </li>
                   <li className="flex items-start">
                     <div className="h-2 w-2 rounded-full bg-primary mt-1 mr-2"></div>
-                    <span>應退金額 = 預付餘額 + 押金 - 應付總額</span>
+                    <span>
+                      應退金額 = 已繳款合計（分）+「收取」押金合計（分）− 應付總額（分），不為負時寫入結算
+                    </span>
                   </li>
                   <li className="flex items-start">
                     <div className="h-2 w-2 rounded-full bg-primary mt-1 mr-2"></div>
@@ -557,6 +631,8 @@ export default function CheckoutPage() {
                     <TableHead className="text-right">應付總額</TableHead>
                     <TableHead className="text-right">電費</TableHead>
                     <TableHead className="text-right">其他扣款</TableHead>
+                    <TableHead className="text-right">已繳</TableHead>
+                    <TableHead className="text-right">押金（收取合計）</TableHead>
                     <TableHead className="text-right">應退</TableHead>
                     <TableHead>狀態</TableHead>
                   </TableRow>
@@ -578,6 +654,8 @@ export default function CheckoutPage() {
                         <TableCell className="text-right">{formatCents(s.totalDue)}</TableCell>
                         <TableCell className="text-right">{formatCents(s.electricityFee)}</TableCell>
                         <TableCell className="text-right">{formatCents(s.otherDeductions)}</TableCell>
+                        <TableCell className="text-right">{formatCents(s.prepaidAmount)}</TableCell>
+                        <TableCell className="text-right">{formatCents(s.depositAmount)}</TableCell>
                         <TableCell className="text-right">{formatCents(s.refundAmount)}</TableCell>
                         <TableCell>{s.settlementStatus}</TableCell>
                       </TableRow>
@@ -607,11 +685,13 @@ export default function CheckoutPage() {
                   <div>租客：{selectedTenant.nameZh || selectedTenant.nameVi || '—'}</div>
                   <div>房號：{selectedRoom.roomNumber}</div>
                   <div>物業：{selectedPropertyName || '—'}</div>
-                  <div>退租：{checkoutDateStr}</div>
+                  <div>退租：{formatDate(checkoutDateYmd)}</div>
                   <div>上期電表（最近抄表）：{lastReading != null ? String(lastReading) : '—'}</div>
                   <div>本期電表：{finalMeter.trim() !== '' ? finalMeter : '—'}</div>
                   <div>預估電費：{formatCurrency(electricityFeePreview || 0)}</div>
                   <div>其他扣款：{formatCurrency(parseFloat(otherDeductionsYuan || '0') || 0)}</div>
+                  <div>已入帳押金（收取）：{formatCents(depositSummary.collectedCents)}</div>
+                  <div>已繳款合計：{prepaidSumCents != null ? formatCents(prepaidSumCents) : '—'}</div>
                 </div>
               </div>
             )}

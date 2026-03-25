@@ -94,7 +94,8 @@ function getAuthToken(): string | null {
 }
 
 // 設定 token（localStorage + cookie + 到期時間）
-export function setAuthToken(token: string, expiresInHours: number = 24): void {
+/** 預設 7 天，與後端 JWT 預設週期大致對齊（仍請以實際 JWT 過期為準） */
+export function setAuthToken(token: string, expiresInHours: number = 24 * 7): void {
   if (typeof document === 'undefined') return;
 
   const expires = new Date();

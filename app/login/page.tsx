@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Label } from '@/components/ui/label';
 import { api, setAuthToken, ApiError } from '@/lib/api-client';
 
 export default function LoginPage() {
+  const [email, setEmail] = useState('admin@rental.com');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,8 +18,12 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!password.trim()) {
+
+    if (!email.trim()) {
+      setError('請輸入電子郵件');
+      return;
+    }
+    if (!password) {
       setError('請輸入密碼');
       return;
     }
@@ -29,7 +35,10 @@ export default function LoginPage() {
       const result = await api.post<{
         user: { id: string; email: string; role: string };
         tokens: { accessToken: string; refreshToken?: string; expiresIn?: number };
-      }>('/api/auth/login', { password: password.trim() });
+      }>('/api/auth/login', {
+        email: email.trim(),
+        password,
+      });
 
       const access = result.tokens?.accessToken;
       if (!access) {
@@ -50,62 +59,69 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-sky-50/40 to-slate-100 p-4">
       <div className="w-full max-w-md">
-        <Card className="shadow-lg border-gray-200">
+        <Card className="shadow-medium border-border/80 bg-card/95 backdrop-blur-sm">
           <CardHeader className="space-y-1">
             <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                <div className="w-12 h-12 bg-blue-200 rounded-full flex items-center justify-center">
-                  <svg 
-                    className="w-8 h-8 text-blue-600" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24" 
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      strokeWidth={2} 
-                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" 
-                    />
-                  </svg>
-                </div>
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-landlord-400 to-landlord-600 flex items-center justify-center shadow-soft">
+                <svg
+                  className="w-8 h-8 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                  />
+                </svg>
               </div>
             </div>
-            <CardTitle className="text-2xl font-bold text-center text-gray-800">
+            <CardTitle className="text-2xl font-bold text-center text-foreground tracking-tight">
               租屋管理系統
             </CardTitle>
-            <CardDescription className="text-center text-gray-600">
-              簡易版登入系統
+            <CardDescription className="text-center text-muted-foreground">
+              請使用後端資料庫帳號登入
               <br />
-              <span className="text-sm text-gray-500">請輸入密碼 &quot;enter&quot; 登入</span>
+              <span className="text-xs">
+                本機預設：<code className="rounded bg-muted px-1 py-0.5">admin@rental.com</code>（密碼見{' '}
+                <code className="rounded bg-muted px-1 py-0.5">npm run db:seed</code> 輸出）
+              </span>
             </CardDescription>
           </CardHeader>
-          
+
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-6">
+            <form onSubmit={handleLogin} className="space-y-5">
               <div className="space-y-2">
-                <label 
-                  htmlFor="password" 
-                  className="text-sm font-medium text-gray-700"
-                >
-                  密碼
-                </label>
+                <Label htmlFor="email">電子郵件</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@rental.com"
+                  className="h-11"
+                  disabled={isLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">密碼</Label>
                 <Input
                   id="password"
                   type="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="請輸入密碼"
-                  className="h-12 text-base"
+                  className="h-11"
                   required
                   disabled={isLoading}
                 />
-                <p className="text-xs text-gray-500">
-                  簡易版：密碼為 <code className="px-1 py-0.5 bg-gray-100 rounded text-gray-700">enter</code>
-                </p>
               </div>
 
               {error && (
@@ -116,7 +132,7 @@ export default function LoginPage() {
 
               <Button
                 type="submit"
-                className="w-full h-12 text-base font-medium"
+                className="w-full h-11 text-base font-medium"
                 isLoading={isLoading}
                 disabled={isLoading}
               >
@@ -124,43 +140,17 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-8 pt-6 border-t border-gray-200">
-              <div className="space-y-3">
-                <div className="flex items-start">
-                  <div className="flex-shrink-0">
-                    <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
-                      <svg 
-                        className="w-4 h-4 text-blue-600" 
-                        fill="none" 
-                        stroke="currentColor" 
-                        viewBox="0 0 24 24" 
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path 
-                          strokeLinecap="round" 
-                          strokeLinejoin="round" 
-                          strokeWidth={2} 
-                          d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" 
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-gray-600">
-                      <strong className="font-medium">簡易版說明：</strong>
-                      密碼與後端約定一致時會向 Zeabur API 取得 JWT，後續請求會帶 Authorization。
-                    </p>
-                  </div>
-                </div>
-              </div>
+            <div className="mt-8 pt-6 border-t border-border">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                登入成功後，瀏覽器會儲存 JWT；後續 API 請求會自動帶上 Authorization。若無法登入，請確認後端已執行{' '}
+                <code className="rounded bg-muted px-1">db:seed</code> 且帳密正確。
+              </p>
             </div>
           </CardContent>
         </Card>
 
         <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">
-            v2.0 建置中 • 台灣房東越南租客管理系統
-          </p>
+          <p className="text-sm text-muted-foreground">v2.0 • 台灣房東越南租客管理系統</p>
         </div>
       </div>
     </div>
