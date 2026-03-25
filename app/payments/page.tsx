@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertTriangle, CalendarRange, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CalendarRange, ChevronRight, Loader2, RefreshCw, Banknote } from 'lucide-react';
 import { formatCents, formatCurrency } from '@/lib/utils';
 import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
@@ -267,6 +267,27 @@ export default function PaymentsPage() {
     });
   }, [occupiedRooms, payments, selectedMonth, tenantByRoom]);
 
+  /** 載入後自動帶入尚欠（元，整數）；若已手動輸入則不覆寫；已結清則清空 */
+  useEffect(() => {
+    setPayAmountYuan((prev) => {
+      const next = { ...prev };
+      for (const row of roomRows) {
+        const key = row.room.id;
+        const open = row.depositRest + row.rentRest + row.elecRest;
+        if (row.settled || open <= 0) {
+          next[key] = '';
+          continue;
+        }
+        const def = String(Math.ceil(open / 100));
+        const cur = next[key];
+        if (cur === undefined || cur === '') {
+          next[key] = def;
+        }
+      }
+      return next;
+    });
+  }, [roomRows]);
+
   const newTenantsInMonth = useMemo(() => {
     return roomRows.filter((r) => r.tenant?.checkInDate && ymFromCheckIn(r.tenant.checkInDate) === selectedMonth);
   }, [roomRows, selectedMonth]);
@@ -447,7 +468,7 @@ export default function PaymentsPage() {
     <PageShell>
       <PageHeader
         title="收租管理"
-        description="先抄電錶，再生成帳單，最後收款"
+        description="待收房間：收款作業置於卡片最上方（可自動帶入尚欠）；非首月請先抄表再收電費"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -583,6 +604,9 @@ export default function PaymentsPage() {
           <Card className="overflow-x-auto">
             <CardHeader>
               <CardTitle className="text-base">收租列表（{selectedMonth}）</CardTitle>
+              <CardDescription>
+                總表快速對帳；點選「收款」會捲動至該房卡片頂端的藍色收款區。
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -595,7 +619,9 @@ export default function PaymentsPage() {
                     <TableHead className="text-right">電費</TableHead>
                     <TableHead className="text-right">合計</TableHead>
                     <TableHead className="text-right">已收</TableHead>
+                    <TableHead className="text-right">尚欠</TableHead>
                     <TableHead>狀態</TableHead>
+                    <TableHead className="w-[72px]">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -609,6 +635,9 @@ export default function PaymentsPage() {
                       isCheckInMonth,
                       isFirstMonth,
                       settled,
+                      depositRest,
+                      rentRest,
+                      elecRest,
                     }) => {
                       const tname = tenant?.nameZh || tenant?.nameVi || '—';
                       const depShow = isCheckInMonth ? formatCurrency(room.depositAmount) : '—';
@@ -622,6 +651,7 @@ export default function PaymentsPage() {
                         (deposit ? Number(deposit.paidAmount) : 0) +
                         (rent ? Number(rent.paidAmount) : 0) +
                         (isFirstMonth ? 0 : elec ? Number(elec.paidAmount) : 0);
+                      const openSum = depositRest + rentRest + elecRest;
                       return (
                         <TableRow key={room.id}>
                           <TableCell className="font-medium">{room.roomNumber}</TableCell>
@@ -631,7 +661,22 @@ export default function PaymentsPage() {
                           <TableCell className="text-right">{elecShow}</TableCell>
                           <TableCell className="text-right">{formatCents(totalC)}</TableCell>
                           <TableCell className="text-right">{formatCents(paidC)}</TableCell>
+                          <TableCell className="text-right font-medium text-amber-800">
+                            {settled ? '—' : formatCents(openSum)}
+                          </TableCell>
                           <TableCell>{settled ? '已結清' : '待收'}</TableCell>
+                          <TableCell>
+                            {!settled && openSum > 0 ? (
+                              <a
+                                href={`#pay-room-${room.id}`}
+                                className="text-sm font-medium text-primary underline underline-offset-2"
+                              >
+                                收款
+                              </a>
+                            ) : (
+                              '—'
+                            )}
+                          </TableCell>
                         </TableRow>
                       );
                     },
@@ -698,13 +743,134 @@ export default function PaymentsPage() {
             }
 
             return (
-              <Card key={room.id} className="border-slate-200">
+              <Card
+                key={room.id}
+                id={`pay-room-${room.id}`}
+                className="scroll-mt-24 border-slate-200 border-2 shadow-sm"
+              >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg">
                     {room.roomNumber} 號房 — {tname} — 月租 ${Number(room.monthlyRent || 0).toLocaleString('zh-TW')}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  <div className="rounded-xl border-2 border-blue-200 bg-gradient-to-b from-blue-50/90 to-blue-50/40 p-4 shadow-sm space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 font-semibold text-blue-950">
+                        <Banknote className="h-5 w-5" />
+                        收款作業
+                      </div>
+                      <span className="text-xs text-blue-800/90">沖帳順序：押金 → 租金 → 電費</span>
+                    </div>
+                    <div className="grid gap-1 rounded-md bg-white/80 px-3 py-2 text-sm border border-blue-100">
+                      {isCheckInMonth && deposit ? (
+                        <div className="flex justify-between gap-4">
+                          <span className="text-muted-foreground">押金待收</span>
+                          <span className={depositRest > 0 ? 'font-medium text-amber-800' : 'text-emerald-700'}>
+                            {formatCents(depositRest)}
+                          </span>
+                        </div>
+                      ) : null}
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">租金待收</span>
+                        <span className={rentRest > 0 ? 'font-medium text-amber-800' : 'text-emerald-700'}>
+                          {rent ? formatCents(rentRest) : '—'}
+                        </span>
+                      </div>
+                      {!isFirstMonth ? (
+                        <div className="flex justify-between gap-4">
+                          <span className="text-muted-foreground">電費待收</span>
+                          <span className={elec && elecRest > 0 ? 'font-medium text-amber-800' : 'text-emerald-700'}>
+                            {elec ? formatCents(elecRest) : '—'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between gap-4 text-muted-foreground">
+                          <span>電費待收</span>
+                          <span>首月不計</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between gap-4 border-t border-blue-100 pt-2 mt-1 text-base font-bold text-blue-950">
+                        <span>尚欠合計</span>
+                        <span>{formatCents(open)}</span>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="sm:col-span-2">
+                        <Label htmlFor={`pay-amt-${room.id}`}>實收金額（元）</Label>
+                        <Input
+                          id={`pay-amt-${room.id}`}
+                          className="text-lg font-semibold h-11"
+                          inputMode="decimal"
+                          value={payAmountYuan[room.id] ?? ''}
+                          onChange={(e) =>
+                            setPayAmountYuan((p) => ({ ...p, [room.id]: e.target.value }))
+                          }
+                          placeholder={String(Math.ceil(open / 100))}
+                        />
+                      </div>
+                      <div>
+                        <Label>方式</Label>
+                        <Select
+                          value={payMethod[room.id] ?? 'cash'}
+                          onValueChange={(v) => setPayMethod((p) => ({ ...p, [room.id]: v }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="cash">現金</SelectItem>
+                            <SelectItem value="transfer">轉帳</SelectItem>
+                            <SelectItem value="other">其他</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex flex-col justify-end gap-1.5">
+                        <span className="text-xs text-muted-foreground sm:min-h-[1.25rem]" aria-hidden>
+                          &nbsp;
+                        </span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="w-full"
+                          onClick={() =>
+                            setPayAmountYuan((p) => ({
+                              ...p,
+                              [room.id]: String(Math.ceil(open / 100)),
+                            }))
+                          }
+                        >
+                          帶入尚欠
+                        </Button>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <Label htmlFor={`pay-note-${room.id}`}>備註</Label>
+                        <Input
+                          id={`pay-note-${room.id}`}
+                          value={payNotes[room.id] ?? ''}
+                          onChange={(e) =>
+                            setPayNotes((p) => ({ ...p, [room.id]: e.target.value }))
+                          }
+                          placeholder="可選"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        className="bg-blue-600 hover:bg-blue-700 min-w-[140px]"
+                        size="lg"
+                        disabled={payBusy[room.id] || open <= 0}
+                        onClick={() =>
+                          void confirmPayRoom(room, deposit, rent, elec, isFirstMonth)
+                        }
+                      >
+                        {payBusy[room.id] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        確認收款
+                      </Button>
+                    </div>
+                  </div>
+
                   <div className="rounded-lg border bg-white p-4 space-y-2">
                     <div className="flex flex-wrap justify-between gap-2">
                       <span className="font-medium">【押金】</span>
@@ -823,57 +989,6 @@ export default function PaymentsPage() {
                     <p className="text-sm text-muted-foreground">
                       已收 {formatCents(paidMonth)}，尚欠 {formatCents(open)}
                     </p>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <Label>實收金額（元）</Label>
-                      <Input
-                        value={payAmountYuan[room.id] ?? ''}
-                        onChange={(e) =>
-                          setPayAmountYuan((p) => ({ ...p, [room.id]: e.target.value }))
-                        }
-                        placeholder={String(Math.ceil(open / 100))}
-                      />
-                    </div>
-                    <div>
-                      <Label>方式</Label>
-                      <Select
-                        value={payMethod[room.id] ?? 'cash'}
-                        onValueChange={(v) => setPayMethod((p) => ({ ...p, [room.id]: v }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="cash">現金</SelectItem>
-                          <SelectItem value="transfer">轉帳</SelectItem>
-                          <SelectItem value="other">其他</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <Label>備註</Label>
-                      <Input
-                        value={payNotes[room.id] ?? ''}
-                        onChange={(e) =>
-                          setPayNotes((p) => ({ ...p, [room.id]: e.target.value }))
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      className="bg-blue-600 hover:bg-blue-700"
-                      disabled={payBusy[room.id] || open <= 0}
-                      onClick={() =>
-                        void confirmPayRoom(room, deposit, rent, elec, isFirstMonth)
-                      }
-                    >
-                      {payBusy[room.id] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                      確認收款
-                    </Button>
                   </div>
                 </CardContent>
               </Card>
