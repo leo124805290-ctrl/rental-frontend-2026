@@ -60,6 +60,42 @@ export function ymFromCheckInLocal(isoDate: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/**
+ * 入住日（YYYY-MM-DD 或 API 回傳的 ISO 字串）→ 所屬 YYYY-MM。
+ * 與後端帳單 paymentMonth 對齊；ISO 時先取日期再本地解析，避免 parseLocalYmd 只吃純日期而失敗。
+ */
+export function ymFromTenantCheckIn(iso: string | undefined | null): string {
+  if (!iso || typeof iso !== 'string') return '';
+  const t = iso.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) {
+    const d = parseLocalYmd(t);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+  const datePart = t.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    const d = parseLocalYmd(datePart);
+    if (!Number.isNaN(d.getTime())) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+  }
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** 入住日字串 → Date（比例租金等計算用，相容 ISO） */
+export function parseTenantCheckInDate(iso: string): Date {
+  const t = iso.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return parseLocalYmd(t);
+  const datePart = t.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    const d = parseLocalYmd(datePart);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return new Date(t);
+}
+
 /** @deprecated 改用 formatExpectedCheckoutIso */
 export function addOneYearToIsoDate(isoDate: string): string {
   return formatExpectedCheckoutIso(isoDate, 12);

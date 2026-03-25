@@ -19,7 +19,12 @@ import { cn, formatCents, formatCurrency } from '@/lib/utils';
 import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
-import { parseLocalYmd, prorationRentYuan, daysRemainingInMonthForRent } from '@/lib/checkin-dates';
+import {
+  prorationRentYuan,
+  daysRemainingInMonthForRent,
+  ymFromTenantCheckIn,
+  parseTenantCheckInDate,
+} from '@/lib/checkin-dates';
 
 interface Property {
   id: string;
@@ -68,13 +73,6 @@ interface PaymentRow {
 function localTodayYmd(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-/** 入住日所屬 YYYY-MM（本地日期） */
-function ymFromCheckIn(iso: string): string {
-  const d = parseLocalYmd(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function formatMdTaiwan(iso: string): string {
@@ -285,7 +283,7 @@ function PaymentsPageContent() {
       const rent = forRoom.find((p) => p.lineType === 'rent') ?? null;
       const elec = forRoom.find((p) => p.lineType === 'electricity') ?? null;
       const tenant = tenantByRoom.get(room.id);
-      const checkYm = tenant?.checkInDate ? ymFromCheckIn(tenant.checkInDate) : '';
+      const checkYm = tenant?.checkInDate ? ymFromTenantCheckIn(tenant.checkInDate) : '';
       const isCheckInMonth = Boolean(checkYm && checkYm === selectedMonth);
       const depositRest = restCents(deposit);
       const rentRest = restCents(rent);
@@ -411,7 +409,9 @@ function PaymentsPageContent() {
   }, [listLoading, roomRows, searchParams, pathname, router]);
 
   const newTenantsInMonth = useMemo(() => {
-    return roomRows.filter((r) => r.tenant?.checkInDate && ymFromCheckIn(r.tenant.checkInDate) === selectedMonth);
+    return roomRows.filter(
+      (r) => r.tenant?.checkInDate && ymFromTenantCheckIn(r.tenant.checkInDate) === selectedMonth,
+    );
   }, [roomRows, selectedMonth]);
 
   const stats = useMemo(() => {
@@ -707,7 +707,7 @@ function PaymentsPageContent() {
           <ul className="mt-3 space-y-4 text-sm">
             {newTenantsInMonth.map(({ room, tenant }) => {
               if (!tenant?.checkInDate) return null;
-              const ci = parseLocalYmd(tenant.checkInDate);
+              const ci = parseTenantCheckInDate(tenant.checkInDate);
               if (Number.isNaN(ci.getTime())) return null;
               const day = ci.getDate();
               const deposit = room.depositAmount;
@@ -815,7 +815,11 @@ function PaymentsPageContent() {
                       rawElecRest,
                     }) => {
                       const tname = tenant?.nameZh || tenant?.nameVi || '—';
-                      const depShow = isCheckInMonth ? formatCurrency(room.depositAmount) : '—';
+                      const depShow = deposit
+                        ? formatCents(deposit.totalAmount)
+                        : isCheckInMonth
+                          ? formatCurrency(room.depositAmount)
+                          : '—';
                       const rentShow = rent ? formatCents(rent.totalAmount) : '—';
                       const elecShow = elec ? formatCents(elec.totalAmount) : '—';
                       const dC = deposit ? Number(deposit.totalAmount) : 0;
@@ -949,7 +953,7 @@ function PaymentsPageContent() {
                                       若尚無電費帳單，請先於下方填寫度數並按「儲存電錶」，再收電費。
                                     </p>
                                     <div className="grid gap-1 rounded-md bg-white/80 px-3 py-2 text-sm border border-blue-100">
-                                      {isCheckInMonth && deposit ? (
+                                      {deposit ? (
                                         <div className="flex justify-between gap-4">
                                           <span className="text-muted-foreground">押金待收</span>
                                           <span
@@ -1176,16 +1180,21 @@ function PaymentsPageContent() {
                                         <div className="flex flex-wrap justify-between gap-2">
                                           <span className="font-medium">【押金】</span>
                                           <span>
-                                            {isCheckInMonth ? formatCurrency(room.depositAmount) : '—'}{' '}
-                                            <span className="text-muted-foreground text-sm">
-                                              （{isCheckInMonth ? '入住當月顯示' : '非入住月不列押金'}）
-                                            </span>
-                                            {isCheckInMonth && deposit ? (
-                                              <span className="text-red-600 ml-2">
-                                                帳單：{formatCents(deposit.totalAmount)} —{' '}
+                                            {deposit ? (
+                                              <span className="text-red-600">
+                                                帳單 {formatCents(deposit.totalAmount)} —{' '}
                                                 {depositRest > 0 ? '待收' : '已收'}
                                               </span>
-                                            ) : null}
+                                            ) : isCheckInMonth ? (
+                                              <>
+                                                {formatCurrency(room.depositAmount)}
+                                                <span className="text-muted-foreground text-sm ml-1">
+                                                  （入住當月；若尚無帳單列請確認入住流程）
+                                                </span>
+                                              </>
+                                            ) : (
+                                              <span className="text-muted-foreground">—（非入住首月）</span>
+                                            )}
                                           </span>
                                         </div>
                                       </div>
