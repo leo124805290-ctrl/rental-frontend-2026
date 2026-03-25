@@ -41,8 +41,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 僅當 SKIP_AUTH=true 時略過登入（本機除錯用）；預設一律檢查 cookie
-  if (process.env['SKIP_AUTH'] === 'true') {
+  // 預設略過前端登入導向（可直接進各頁；API 仍由後端 JWT 把關）
+  // 若需強制先登入再瀏覽，請在環境變數設 SKIP_AUTH=false
+  if (process.env['SKIP_AUTH'] !== 'false') {
     return NextResponse.next();
   }
 
