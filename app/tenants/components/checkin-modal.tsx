@@ -7,7 +7,14 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertCircle, Home, User } from 'lucide-react';
-import { addOneYearToIsoDate } from '@/lib/checkin-dates';
+import {
+  CONTRACT_TERM_OPTIONS,
+  type ContractTermMonths,
+  formatExpectedCheckoutIso,
+  prorationRentYuan,
+  daysRemainingInMonthForRent,
+  parseLocalYmd,
+} from '@/lib/checkin-dates';
 
 interface Room {
   id: string;
@@ -27,7 +34,9 @@ export type CheckinSubmitPayload = {
   phone: string;
   passportNumber: string;
   checkInDate: string;
-  expectedCheckoutDate: string;
+  contractTermMonths: ContractTermMonths;
+  /** 空字串表示不登錄；可填 0 */
+  initialMeterReading: string;
 };
 
 interface CheckinModalProps {
@@ -37,17 +46,13 @@ interface CheckinModalProps {
   rooms: Room[];
 }
 
-export default function CheckinModal({
-  isOpen,
-  onClose,
-  onSubmit,
-  rooms,
-}: CheckinModalProps) {
+export default function CheckinModal({ isOpen, onClose, onSubmit, rooms }: CheckinModalProps) {
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
   const [tenantName, setTenantName] = useState('');
   const [phone, setPhone] = useState('');
   const [checkInDate, setCheckInDate] = useState('');
-  const [expectedCheckoutDate, setExpectedCheckoutDate] = useState('');
+  const [contractTermMonths, setContractTermMonths] = useState<ContractTermMonths>(12);
+  const [initialMeterReading, setInitialMeterReading] = useState('');
   const [passportNumber, setPassportNumber] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,7 +63,8 @@ export default function CheckinModal({
     if (!isOpen) return;
     const t = new Date().toISOString().split('T')[0] ?? '';
     setCheckInDate(t);
-    setExpectedCheckoutDate(addOneYearToIsoDate(t));
+    setContractTermMonths(12);
+    setInitialMeterReading('');
   }, [isOpen]);
 
   const resetForm = () => {
@@ -66,6 +72,7 @@ export default function CheckinModal({
     setTenantName('');
     setPhone('');
     setPassportNumber('');
+    setInitialMeterReading('');
     setErrors({});
   };
 
@@ -98,7 +105,8 @@ export default function CheckinModal({
         phone,
         passportNumber: passportNumber.trim(),
         checkInDate,
-        expectedCheckoutDate,
+        contractTermMonths,
+        initialMeterReading: initialMeterReading.trim(),
       };
       await onSubmit(checkinData);
       onClose();
@@ -111,6 +119,35 @@ export default function CheckinModal({
   };
 
   const selectedRoom = rooms.find((room) => room.id === selectedRoomId);
+  const expectedCheckoutIso =
+    checkInDate && /^\d{4}-\d{2}-\d{2}$/.test(checkInDate)
+      ? formatExpectedCheckoutIso(checkInDate, contractTermMonths)
+      : '';
+
+  const preview = (() => {
+    if (!selectedRoom || !checkInDate) return null;
+    const d = parseLocalYmd(checkInDate);
+    if (Number.isNaN(d.getTime())) return null;
+    const monthly = selectedRoom.monthlyRent;
+    const deposit = selectedRoom.depositAmount;
+    const pr = prorationRentYuan(monthly, d);
+    const days = daysRemainingInMonthForRent(d);
+    const after20 = d.getDate() > 20;
+    if (after20) {
+      return {
+        lines: [
+          `當月比例租金（${days} 天）約 ${pr.toLocaleString()} 元`,
+          `次月整月租金 ${monthly.toLocaleString()} 元`,
+          `押金 ${deposit.toLocaleString()} 元`,
+        ],
+        total: pr + monthly + deposit,
+      };
+    }
+    return {
+      lines: [`當月比例租金（${days} 天）約 ${pr.toLocaleString()} 元`, `押金 ${deposit.toLocaleString()} 元`],
+      total: pr + deposit,
+    };
+  })();
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -121,7 +158,7 @@ export default function CheckinModal({
             辦理租客入住
           </DialogTitle>
           <DialogDescription>
-            填寫租客資料後送出；收款請至「收租管理」處理。
+            送出後依入住日與 20 號規則自動建立帳單；收款請至「收租管理」。
           </DialogDescription>
         </DialogHeader>
 
@@ -210,28 +247,67 @@ export default function CheckinModal({
                     id="checkInDate"
                     type="date"
                     value={checkInDate}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setCheckInDate(v);
-                      setExpectedCheckoutDate(addOneYearToIsoDate(v));
-                    }}
+                    onChange={(e) => setCheckInDate(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="expectedCheckoutDate">合約到期日 *</Label>
-                  <Input
-                    id="expectedCheckoutDate"
-                    type="date"
-                    value={expectedCheckoutDate}
-                    onChange={(e) => setExpectedCheckoutDate(e.target.value)}
-                  />
+                  <Label htmlFor="contractTerm">合約期限 *</Label>
+                  <Select
+                    value={String(contractTermMonths)}
+                    onValueChange={(v) => setContractTermMonths(Number(v) as ContractTermMonths)}
+                  >
+                    <SelectTrigger id="contractTerm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONTRACT_TERM_OPTIONS.map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {n === 12 ? '1 年（12 個月）' : `${n} 個月`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="expectedCheckoutDate">合約到期日（自動計算）</Label>
+                <Input
+                  id="expectedCheckoutDate"
+                  type="text"
+                  readOnly
+                  className="bg-muted/60"
+                  value={expectedCheckoutIso || '—'}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="initialMeter">入住電錶度數（起始度數，可填 0）</Label>
+                <Input
+                  id="initialMeter"
+                  inputMode="numeric"
+                  placeholder="留空則不登錄"
+                  value={initialMeterReading}
+                  onChange={(e) => setInitialMeterReading(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">新錶或從 0 起算可填 0。</p>
+              </div>
               {selectedRoom && (
-                <p className="text-xs text-muted-foreground">
-                  此房月租／押金將帶入收租單（分）：月租 {selectedRoom.monthlyRent}、押金{' '}
-                  {selectedRoom.depositAmount}
-                </p>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm space-y-1">
+                  <p className="text-muted-foreground">
+                    此房月租 {selectedRoom.monthlyRent.toLocaleString()} 元、押金（房間設定）{' '}
+                    {selectedRoom.depositAmount.toLocaleString()} 元
+                  </p>
+                  {preview && (
+                    <>
+                      <p className="font-medium text-foreground pt-1">入住應收預覽（約）</p>
+                      <ul className="list-disc pl-5 space-y-0.5">
+                        {preview.lines.map((l) => (
+                          <li key={l}>{l}</li>
+                        ))}
+                      </ul>
+                      <p className="font-semibold pt-1">合計約 {preview.total.toLocaleString()} 元</p>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>

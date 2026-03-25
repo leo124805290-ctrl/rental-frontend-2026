@@ -181,6 +181,17 @@ export default function TenantsPage() {
         alert('找不到房間資料，請重新整理頁面');
         return;
       }
+      const rawMeter = data.initialMeterReading.trim();
+      let initialMeterReading: number | undefined;
+      if (rawMeter !== '') {
+        const n = Number(rawMeter.replace(/,/g, ''));
+        if (!Number.isFinite(n) || n < 0) {
+          alert('入住電錶度數須為 0 以上的數字');
+          return;
+        }
+        initialMeterReading = n;
+      }
+
       await api.post('/api/checkin/complete', {
         roomId: data.roomId,
         nameZh: data.nameZh,
@@ -188,12 +199,11 @@ export default function TenantsPage() {
         phone: data.phone,
         passportNumber: data.passportNumber.trim() || undefined,
         checkInDate: data.checkInDate,
-        expectedCheckoutDate: data.expectedCheckoutDate,
+        contractTermMonths: data.contractTermMonths,
         paymentType: 'full',
-        rentAmount: room.monthlyRent,
-        depositAmount: room.depositAmount,
         paidAmount: 0,
         paymentAmount: 0,
+        ...(initialMeterReading !== undefined ? { initialMeterReading } : {}),
       });
 
       await loadTenants();

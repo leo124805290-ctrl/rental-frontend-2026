@@ -19,6 +19,7 @@ import { cn, formatCents, formatCurrency } from '@/lib/utils';
 import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { parseLocalYmd, prorationRentYuan, daysRemainingInMonthForRent } from '@/lib/checkin-dates';
 
 interface Property {
   id: string;
@@ -69,9 +70,9 @@ function localTodayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** 入住日所屬 YYYY-MM（本地時區） */
+/** 入住日所屬 YYYY-MM（本地日期） */
 function ymFromCheckIn(iso: string): string {
-  const d = new Date(iso);
+  const d = parseLocalYmd(iso);
   if (Number.isNaN(d.getTime())) return '';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
@@ -80,13 +81,6 @@ function formatMdTaiwan(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-/** 首月日數：月租 ÷ 30 ×（30 − 入住日 + 1） */
-function prorationFirstMonthRentYuan(monthlyRentYuan: number, dayOfMonth: number): number {
-  const daily = monthlyRentYuan / 30;
-  const days = 30 - dayOfMonth + 1;
-  return Math.round(daily * days);
 }
 
 function nextMonthLabelFromYm(ym: string): string {
@@ -287,15 +281,13 @@ function PaymentsPageContent() {
       const tenant = tenantByRoom.get(room.id);
       const checkYm = tenant?.checkInDate ? ymFromCheckIn(tenant.checkInDate) : '';
       const isCheckInMonth = Boolean(checkYm && checkYm === selectedMonth);
-      const isFirstMonth = isCheckInMonth;
       const depositRest = restCents(deposit);
       const rentRest = restCents(rent);
-      const elecRest = isFirstMonth ? 0 : restCents(elec);
+      const elecRest = elec ? restCents(elec) : 0;
       const settled = Boolean(
         (!deposit || depositRest === 0) &&
-          rent &&
-          rentRest === 0 &&
-          (isFirstMonth ? true : !elec || restCents(elec) === 0),
+          (!rent || rentRest === 0) &&
+          (!elec || restCents(elec) === 0),
       );
       return {
         room,
@@ -306,9 +298,8 @@ function PaymentsPageContent() {
         depositRest,
         rentRest,
         elecRest,
-        rawElecRest: restCents(elec),
+        rawElecRest: elec ? restCents(elec) : 0,
         isCheckInMonth,
-        isFirstMonth,
         settled,
       };
     });
@@ -395,8 +386,8 @@ function PaymentsPageContent() {
       const d = r.deposit ? Number(r.deposit.totalAmount) : 0;
       const tr = r.rent ? Number(r.rent.totalAmount) : 0;
       const tp = r.rent ? Number(r.rent.paidAmount) : 0;
-      const er = r.isFirstMonth ? 0 : r.elec ? Number(r.elec.totalAmount) : 0;
-      const ep = r.isFirstMonth ? 0 : r.elec ? Number(r.elec.paidAmount) : 0;
+      const er = r.elec ? Number(r.elec.totalAmount) : 0;
+      const ep = r.elec ? Number(r.elec.paidAmount) : 0;
       const dp = r.deposit ? Number(r.deposit.paidAmount) : 0;
       due += d + tr + er;
       collected += dp + tp + ep;
@@ -430,8 +421,7 @@ function PaymentsPageContent() {
     }
   };
 
-  const saveMeter = async (room: Room, isFirstMonth: boolean) => {
-    if (isFirstMonth) return;
+  const saveMeter = async (room: Room) => {
     const d = meterDraft[room.id];
     if (!d) return;
     const parsed = parseMeterReadingInput(d.current);
@@ -492,7 +482,6 @@ function PaymentsPageContent() {
     deposit: PaymentRow | null,
     rent: PaymentRow | null,
     elec: PaymentRow | null,
-    isFirstMonth: boolean,
   ) => {
     const key = room.id;
     const yuan = parseFloat((payAmountYuan[key] || '0').replace(/,/g, ''));
@@ -528,7 +517,7 @@ function PaymentsPageContent() {
           left -= pay;
         }
       }
-      if (!isFirstMonth && elec && restCents(elec) > 0 && left > 0) {
+      if (elec && restCents(elec) > 0 && left > 0) {
         const pay = Math.min(left, restCents(elec));
         if (pay > 0) {
           await api.patch(`/api/payments/${elec.id}/pay`, {
@@ -561,7 +550,7 @@ function PaymentsPageContent() {
     <PageShell>
       <PageHeader
         title="收租管理"
-        description="入住完成會帶你來此並標示該房；可關閉新入住提示；非首月請先抄表再收電費"
+        description="入住完成會帶你來此並標示該房；可關閉新入住提示；抄表後按「儲存電錶」再收電費"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -640,12 +629,13 @@ function PaymentsPageContent() {
           <ul className="mt-3 space-y-4 text-sm">
             {newTenantsInMonth.map(({ room, tenant }) => {
               if (!tenant?.checkInDate) return null;
-              const ci = new Date(tenant.checkInDate);
+              const ci = parseLocalYmd(tenant.checkInDate);
+              if (Number.isNaN(ci.getTime())) return null;
               const day = ci.getDate();
               const deposit = room.depositAmount;
               const monthly = room.monthlyRent;
-              const firstRent = prorationFirstMonthRentYuan(monthly, day);
-              const days = 30 - day + 1;
+              const firstRent = prorationRentYuan(monthly, ci);
+              const days = daysRemainingInMonthForRent(ci);
               const name = tenant.nameZh || tenant.nameVi || '—';
               const md = formatMdTaiwan(tenant.checkInDate);
               if (day > 20) {
@@ -657,11 +647,11 @@ function PaymentsPageContent() {
                       • {room.roomNumber} {name}（{md} 入住，20 號後入住多收下月）
                     </div>
                     <div className="mt-1 pl-3 text-muted-foreground">
-                      押金 {formatCurrency(deposit)} + {selectedMonth.replace('-', '年')}月租金 {formatCurrency(firstRent)}（{days}
+                      押金 {formatCurrency(deposit)} + {selectedMonth.replace('-', '年')}月比例租金 {formatCurrency(firstRent)}（{days}
                       天）
                       <br />+ {nm}租金 {formatCurrency(monthly)} = {formatCurrency(total)}
                     </div>
-                    <div className="mt-1 pl-3 text-amber-900/90">※ 新入住第一期無電費</div>
+                    <div className="mt-1 pl-3 text-amber-900/90">※ 入住當月可抄表並產生電費帳單</div>
                   </li>
                 );
               }
@@ -672,9 +662,9 @@ function PaymentsPageContent() {
                     • {room.roomNumber} {name}（{md} 入住）
                   </div>
                   <div className="mt-1 pl-3 text-muted-foreground">
-                    押金 {formatCurrency(deposit)} + 首月租金 {formatCurrency(firstRent)}（{days} 天）= {formatCurrency(total)}
+                    押金 {formatCurrency(deposit)} + 首月比例租金 {formatCurrency(firstRent)}（{days} 天）= {formatCurrency(total)}
                   </div>
-                  <div className="mt-1 pl-3 text-amber-900/90">※ 新入住第一期無電費</div>
+                  <div className="mt-1 pl-3 text-amber-900/90">※ 入住當月可抄表並產生電費帳單</div>
                 </li>
               );
             })}
@@ -741,7 +731,6 @@ function PaymentsPageContent() {
                       rent,
                       elec,
                       isCheckInMonth,
-                      isFirstMonth,
                       settled,
                       depositRest,
                       rentRest,
@@ -750,15 +739,15 @@ function PaymentsPageContent() {
                       const tname = tenant?.nameZh || tenant?.nameVi || '—';
                       const depShow = isCheckInMonth ? formatCurrency(room.depositAmount) : '—';
                       const rentShow = rent ? formatCents(rent.totalAmount) : '—';
-                      const elecShow = isFirstMonth ? '—' : elec ? formatCents(elec.totalAmount) : '—';
+                      const elecShow = elec ? formatCents(elec.totalAmount) : '—';
                       const dC = deposit ? Number(deposit.totalAmount) : 0;
                       const rC = rent ? Number(rent.totalAmount) : 0;
-                      const eC = isFirstMonth ? 0 : elec ? Number(elec.totalAmount) : 0;
+                      const eC = elec ? Number(elec.totalAmount) : 0;
                       const totalC = dC + rC + eC;
                       const paidC =
                         (deposit ? Number(deposit.paidAmount) : 0) +
                         (rent ? Number(rent.paidAmount) : 0) +
-                        (isFirstMonth ? 0 : elec ? Number(elec.paidAmount) : 0);
+                        (elec ? Number(elec.paidAmount) : 0);
                       const openSum = depositRest + rentRest + elecRest;
                       return (
                         <TableRow
@@ -815,7 +804,6 @@ function PaymentsPageContent() {
             depositRest,
             rawElecRest,
             isCheckInMonth,
-            isFirstMonth,
             settled,
           }) => {
             const tname = tenant?.nameZh || tenant?.nameVi || '—';
@@ -831,12 +819,12 @@ function PaymentsPageContent() {
               usage !== null ? estimateElectricityFeeCents(usage, rate) : null;
             const dC = deposit ? Number(deposit.totalAmount) : 0;
             const rC = rent ? Number(rent.totalAmount) : 0;
-            const eC = isFirstMonth ? 0 : elec ? Number(elec.totalAmount) : 0;
+            const eC = elec ? Number(elec.totalAmount) : 0;
             const totalMonth = dC + rC + eC;
             const paidMonth =
               (deposit ? Number(deposit.paidAmount) : 0) +
               (rent ? Number(rent.paidAmount) : 0) +
-              (isFirstMonth ? 0 : elec ? Number(elec.paidAmount) : 0);
+              (elec ? Number(elec.paidAmount) : 0);
             const open = depositRest + rentRest + elecRest;
 
             if (settled && rent) {
@@ -849,7 +837,7 @@ function PaymentsPageContent() {
                         ✅ {room.roomNumber} — {tname}｜
                         {isCheckInMonth && deposit ? `押金 ${formatCents(deposit.totalAmount)} + ` : ''}
                         租金 {rent ? formatCents(rent.totalAmount) : '$0'}
-                        {!isFirstMonth && elec ? ` + 電費 ${formatCents(elec.totalAmount)}` : ''} ={' '}
+                        {elec ? ` + 電費 ${formatCents(elec.totalAmount)}` : ''} ={' '}
                         {formatCents(totalMonth)} 已收完
                       </span>
                     </div>
@@ -896,19 +884,12 @@ function PaymentsPageContent() {
                           {rent ? formatCents(rentRest) : '—'}
                         </span>
                       </div>
-                      {!isFirstMonth ? (
-                        <div className="flex justify-between gap-4">
-                          <span className="text-muted-foreground">電費待收</span>
-                          <span className={elec && elecRest > 0 ? 'font-medium text-amber-800' : 'text-emerald-700'}>
-                            {elec ? formatCents(elecRest) : '—'}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex justify-between gap-4 text-muted-foreground">
-                          <span>電費待收</span>
-                          <span>首月不計</span>
-                        </div>
-                      )}
+                      <div className="flex justify-between gap-4">
+                        <span className="text-muted-foreground">電費待收</span>
+                        <span className={elec && elecRest > 0 ? 'font-medium text-amber-800' : 'text-emerald-700'}>
+                          {elec ? formatCents(elecRest) : '—'}
+                        </span>
+                      </div>
                       <div className="flex justify-between gap-4 border-t border-blue-100 pt-2 mt-1 text-base font-bold text-blue-950">
                         <span>尚欠合計</span>
                         <span>{formatCents(open)}</span>
@@ -980,9 +961,7 @@ function PaymentsPageContent() {
                         className="bg-blue-600 hover:bg-blue-700 min-w-[140px]"
                         size="lg"
                         disabled={payBusy[room.id] || open <= 0}
-                        onClick={() =>
-                          void confirmPayRoom(room, deposit, rent, elec, isFirstMonth)
-                        }
+                        onClick={() => void confirmPayRoom(room, deposit, rent, elec)}
                       >
                         {payBusy[room.id] ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         確認收款
@@ -1022,79 +1001,71 @@ function PaymentsPageContent() {
 
                   <div className="rounded-lg border bg-white p-4 space-y-3">
                     <div className="font-medium">【電費】</div>
-                    {isFirstMonth ? (
-                      <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                        首月無電費（新入住第一期不抄表）
-                        {rawElecRest > 0 ? (
-                          <span className="block mt-1 text-xs">若已誤開電費帳單，請於後台處理；收款時本期不沖電費。</span>
-                        ) : null}
-                      </p>
-                    ) : (
-                      <>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div>
-                            <Label className="text-muted-foreground">上期度數</Label>
-                            <p className="font-mono">{prev !== null ? prev.toLocaleString('zh-TW') : '—'}</p>
-                          </div>
-                          <div>
-                            <Label>本期度數</Label>
-                            <Input
-                              type="number"
-                              min={0}
-                              step="1"
-                              value={curVal}
-                              onChange={(e) =>
-                                setMeterDraft((m) => ({
-                                  ...m,
-                                  [room.id]: {
-                                    current: e.target.value,
-                                    date: m[room.id]?.date ?? localTodayYmd(),
-                                    prev: m[room.id]?.prev ?? null,
-                                    loading: m[room.id]?.loading ?? false,
-                                  },
-                                }))
-                              }
-                              placeholder="例如 960 或 0"
-                            />
-                          </div>
-                          <div>
-                            <Label>抄表日期</Label>
-                            <Input
-                              type="date"
-                              value={curDate}
-                              onChange={(e) =>
-                                setMeterDraft((m) => ({
-                                  ...m,
-                                  [room.id]: {
-                                    current: m[room.id]?.current ?? '',
-                                    date: e.target.value,
-                                    prev: m[room.id]?.prev ?? null,
-                                    loading: m[room.id]?.loading ?? false,
-                                  },
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="text-sm">
-                            {usage !== null && (
-                              <>
-                                用電 {usage} 度 × ${(rate / 100).toFixed(1)}/度 = 電費{' '}
-                                {feePreview !== null ? formatCents(feePreview) : '—'}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={draft?.loading}
-                          onClick={() => void saveMeter(room, isFirstMonth)}
-                        >
-                          {draft?.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                          儲存電錶
-                        </Button>
-                      </>
-                    )}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label className="text-muted-foreground">上期度數</Label>
+                        <p className="font-mono">{prev !== null ? prev.toLocaleString('zh-TW') : '—'}</p>
+                      </div>
+                      <div>
+                        <Label>本期度數</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step="1"
+                          value={curVal}
+                          onChange={(e) =>
+                            setMeterDraft((m) => ({
+                              ...m,
+                              [room.id]: {
+                                current: e.target.value,
+                                date: m[room.id]?.date ?? localTodayYmd(),
+                                prev: m[room.id]?.prev ?? null,
+                                loading: m[room.id]?.loading ?? false,
+                              },
+                            }))
+                          }
+                          placeholder="例如 960 或 0"
+                        />
+                      </div>
+                      <div>
+                        <Label>抄表日期</Label>
+                        <Input
+                          type="date"
+                          value={curDate}
+                          onChange={(e) =>
+                            setMeterDraft((m) => ({
+                              ...m,
+                              [room.id]: {
+                                current: m[room.id]?.current ?? '',
+                                date: e.target.value,
+                                prev: m[room.id]?.prev ?? null,
+                                loading: m[room.id]?.loading ?? false,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="text-sm">
+                        {usage !== null && (
+                          <>
+                            用電 {usage} 度 × ${(rate / 100).toFixed(1)}/度 = 電費{' '}
+                            {feePreview !== null ? formatCents(feePreview) : '—'}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={draft?.loading}
+                      onClick={() => void saveMeter(room)}
+                    >
+                      {draft?.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      儲存電錶
+                    </Button>
+                    {rawElecRest > 0 && !elec ? (
+                      <p className="text-xs text-muted-foreground">請先儲存電錶以產生電費帳單。</p>
+                    ) : null}
                   </div>
 
                   <div className="rounded-lg border bg-slate-50 p-4 space-y-2">
@@ -1102,7 +1073,7 @@ function PaymentsPageContent() {
                     <p>
                       {isCheckInMonth && deposit ? `押金 ${formatCents(deposit.totalAmount)} + ` : ''}
                       租金 {rent ? formatCents(rent.totalAmount) : '$0'}
-                      {!isFirstMonth && elec ? ` + 電費 ${formatCents(elec.totalAmount)}` : isFirstMonth ? ' + 電費 —' : ' + 電費 $0'}{' '}
+                      {elec ? ` + 電費 ${formatCents(elec.totalAmount)}` : ' + 電費 $0'}{' '}
                       = 本月合計 {formatCents(totalMonth)}
                     </p>
                     <p className="text-sm text-muted-foreground">
