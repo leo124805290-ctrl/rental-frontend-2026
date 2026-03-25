@@ -214,8 +214,9 @@ export default function CheckoutPage() {
 
   const meterPreview = useMemo(() => {
     const prev = lastReading ?? 0;
-    const finalVal = Number(finalMeter || 0);
-    if (!finalMeter) return null;
+    const trimmed = finalMeter.trim();
+    if (trimmed === '') return null;
+    const finalVal = Number(trimmed);
     if (Number.isNaN(finalVal) || finalVal < 0) return null;
     const diff = finalVal - prev;
     return diff >= 0 ? { prev, finalVal, usage: diff } : null;
@@ -242,9 +243,14 @@ export default function CheckoutPage() {
       alert('請先選擇租客');
       return;
     }
-    const finalVal = parseInt(finalMeter, 10);
-    if (Number.isNaN(finalVal)) {
+    const trimmed = finalMeter.trim();
+    if (trimmed === '') {
       alert('請輸入本期（退租）電表度數');
+      return;
+    }
+    const finalVal = Number(trimmed);
+    if (Number.isNaN(finalVal) || finalVal < 0) {
+      alert('請輸入有效非負電表度數');
       return;
     }
     setShowSettlementDialog(true);
@@ -252,8 +258,10 @@ export default function CheckoutPage() {
 
   const handleConfirmCheckout = async () => {
     if (!selectedTenant || !selectedRoom) return;
-    const finalVal = parseInt(finalMeter, 10);
-    if (Number.isNaN(finalVal)) return;
+    const trimmed = finalMeter.trim();
+    if (trimmed === '') return;
+    const finalVal = Number(trimmed);
+    if (Number.isNaN(finalVal) || finalVal < 0) return;
 
     try {
       setSubmitting(true);
@@ -398,9 +406,11 @@ export default function CheckoutPage() {
                             <Input
                               id="final-meter"
                               type="number"
+                              min={0}
+                              step="1"
                               value={finalMeter}
                               onChange={(e) => setFinalMeter(e.target.value)}
-                              placeholder="例如：1250"
+                              placeholder="例如：1250 或 0"
                             />
                             <p className="text-xs text-muted-foreground">
                               上期（最近抄表）：{lastReading != null ? String(lastReading) : '—'}
@@ -599,7 +609,7 @@ export default function CheckoutPage() {
                   <div>物業：{selectedPropertyName || '—'}</div>
                   <div>退租：{checkoutDateStr}</div>
                   <div>上期電表（最近抄表）：{lastReading != null ? String(lastReading) : '—'}</div>
-                  <div>本期電表：{finalMeter || '—'}</div>
+                  <div>本期電表：{finalMeter.trim() !== '' ? finalMeter : '—'}</div>
                   <div>預估電費：{formatCurrency(electricityFeePreview || 0)}</div>
                   <div>其他扣款：{formatCurrency(parseFloat(otherDeductionsYuan || '0') || 0)}</div>
                 </div>
