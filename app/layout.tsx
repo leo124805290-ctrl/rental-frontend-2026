@@ -14,15 +14,15 @@ import {
   Gauge,
   UserCog,
   Menu,
-  Shield,
+  History,
 } from 'lucide-react';
 import { UserSessionMenu } from '@/components/app-shell/user-session-menu';
 
 const navItems = [
   { href: '/dashboard', label: '儀表板', icon: LayoutDashboard },
   { href: '/properties', label: '物業管理', icon: Building },
-  { href: '/payments', label: '收租管理', icon: CreditCard },
-  { href: '/deposits', label: '押金管理', icon: Shield },
+  { href: '/payments', label: '月結收款', icon: CreditCard },
+  { href: '/deposits', label: '押金紀錄', icon: History },
   { href: '/checkout', label: '退租結算', icon: LogOut },
   { href: '/finance', label: '收支管理', icon: Wallet },
   { href: '/reports', label: '損益報表', icon: BarChart3 },
@@ -34,8 +34,8 @@ function pageTitleFromPath(pathname: string): string {
   if (pathname === '/' || pathname === '/dashboard') return '儀表板';
   if (pathname === '/properties') return '物業管理';
   if (pathname.startsWith('/properties/')) return '房間管理';
-  if (pathname === '/payments') return '收租管理';
-  if (pathname === '/deposits') return '押金管理';
+  if (pathname === '/payments') return '月結收款';
+  if (pathname === '/deposits') return '押金紀錄';
   if (pathname === '/checkout') return '退租結算';
   if (pathname === '/finance') return '收支管理';
   if (pathname === '/reports') return '損益報表';

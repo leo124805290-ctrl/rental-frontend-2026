@@ -603,8 +603,8 @@ function PaymentsPageContent() {
   return (
     <PageShell>
       <PageHeader
-        title="收租管理"
-        description="入住完成會帶你來此並展開該房列；列表點「收款」展開抄表與沖帳；可關閉新入住提示"
+        title="月結收款"
+        description="月租、電費與入住當月押金皆在此沖帶。入住完成可自動開啟該房列；點「收款」展開抄表與確認金額。「押金紀錄」分頁僅供查詢歷史流水，不操作收款。"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -779,7 +779,7 @@ function PaymentsPageContent() {
         {occupiedRooms.length > 0 && (
           <Card className="overflow-hidden">
             <CardHeader>
-              <CardTitle className="text-base">收租列表（{selectedMonth}）</CardTitle>
+              <CardTitle className="text-base">當月收款一覽（{selectedMonth}）</CardTitle>
               <CardDescription>總表快速對帳；點「收款」於列下方展開收款與抄表，再點「收合」關閉。</CardDescription>
             </CardHeader>
             <CardContent className="pt-0">

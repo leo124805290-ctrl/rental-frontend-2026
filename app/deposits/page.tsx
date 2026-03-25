@@ -105,13 +105,20 @@ export default function DepositsPage() {
   return (
     <PageShell>
       <PageHeader
-        title="押金管理"
-        description="押金收取／退還／扣款紀錄；可依房間篩選。"
+        title="押金紀錄"
+        description="僅供查詢：押金相關流水（收取、退還、調整等）。實際收款與沖帳請至「月結收款」。"
       />
+
+      <Card className="mb-4 border-slate-300 bg-slate-50">
+        <CardContent className="py-3 text-sm text-slate-800">
+          <span className="font-medium">只讀</span>
+          ：本頁不提供收款按鈕。請至側邊欄「月結收款」處理當月帳單與押金沖帶。
+        </CardContent>
+      </Card>
 
       <Card className="mb-4">
         <CardHeader>
-          <CardTitle className="text-base">篩選</CardTitle>
+          <CardTitle className="text-base">查詢條件</CardTitle>
           <CardDescription>先選物業再選房間，或選「全部」。</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4 items-end">
@@ -164,8 +171,8 @@ export default function DepositsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">押金流水</CardTitle>
-          <CardDescription>共 {filteredRows.length} 筆</CardDescription>
+          <CardTitle className="text-base">歷史流水</CardTitle>
+          <CardDescription>共 {filteredRows.length} 筆（僅顯示，不可編輯）</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {loading ? (
