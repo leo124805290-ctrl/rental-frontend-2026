@@ -67,6 +67,7 @@ const nextConfig: NextConfig = {
     { source: '/expenses', destination: '/finance', permanent: false },
     { source: '/incomes', destination: '/finance', permanent: false },
     { source: '/meter-readings', destination: '/meter-history', permanent: false },
+    { source: '/payments', destination: '/payment-details', permanent: true },
   ],
 
   /* 重寫規則（API 代理） */

@@ -106,13 +106,13 @@ export default function DepositsPage() {
     <PageShell>
       <PageHeader
         title="押金紀錄"
-        description="僅供查詢：押金相關流水（收取、退還、調整等）。實際收款與沖帳請至「月結收款」。"
+        description="僅供查詢：押金相關流水（收取、退還、調整等）。實際收款與沖帳請至「繳款明細」。"
       />
 
       <Card className="mb-4 border-slate-300 bg-slate-50">
         <CardContent className="py-3 text-sm text-slate-800">
           <span className="font-medium">只讀</span>
-          ：本頁不提供收款按鈕。請至側邊欄「月結收款」處理當月帳單與押金沖帶。
+          ：本頁不提供收款按鈕。請至側邊欄「繳款明細」處理當月帳單與入住首月押金沖帶。
         </CardContent>
       </Card>
 
