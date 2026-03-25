@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,8 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertTriangle, CalendarRange, ChevronRight, Loader2, RefreshCw, Banknote } from 'lucide-react';
-import { formatCents, formatCurrency } from '@/lib/utils';
+import { AlertTriangle, CalendarRange, ChevronRight, Loader2, RefreshCw, Banknote, X } from 'lucide-react';
+import { cn, formatCents, formatCurrency } from '@/lib/utils';
 import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
@@ -114,6 +115,27 @@ function parseMeterReadingInput(raw: string): number | null {
 }
 
 export default function PaymentsPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageShell>
+          <div className="flex justify-center py-24">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        </PageShell>
+      }
+    >
+      <PaymentsPageContent />
+    </Suspense>
+  );
+}
+
+function PaymentsPageContent() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const highlightProcessedRef = useRef<string | null>(null);
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
@@ -132,6 +154,31 @@ export default function PaymentsPage() {
   const [payAmountYuan, setPayAmountYuan] = useState<Record<string, string>>({});
   const [payMethod, setPayMethod] = useState<Record<string, string>>({});
   const [payNotes, setPayNotes] = useState<Record<string, string>>({});
+  const [flashRoomId, setFlashRoomId] = useState<string | null>(null);
+  const [newTenantTipDismissed, setNewTenantTipDismissed] = useState(false);
+
+  useEffect(() => {
+    const m = searchParams.get('month');
+    if (m && /^\d{4}-\d{2}$/.test(m)) {
+      setSelectedMonth(m);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const p = searchParams.get('propertyId');
+    if (!p || properties.length === 0) return;
+    if (properties.some((x) => x.id === p)) {
+      setSelectedPropertyId(p);
+    }
+  }, [searchParams, properties]);
+
+  useEffect(() => {
+    try {
+      setNewTenantTipDismissed(localStorage.getItem(`payments_dismiss_newtenant_${selectedMonth}`) === '1');
+    } catch {
+      setNewTenantTipDismissed(false);
+    }
+  }, [selectedMonth]);
 
   useEffect(() => {
     (async () => {
@@ -287,6 +334,52 @@ export default function PaymentsPage() {
       return next;
     });
   }, [roomRows]);
+
+  /** URL：?roomId=&fromCheckin=1 → 捲至列表列、強調、入住後帶入尚欠、再清掉追蹤參數 */
+  useEffect(() => {
+    if (!searchParams.get('roomId')) {
+      highlightProcessedRef.current = null;
+      return;
+    }
+    if (listLoading) return;
+    const roomId = searchParams.get('roomId');
+    if (!roomId) return;
+
+    const row = roomRows.find((r) => r.room.id === roomId);
+    if (!row) return;
+
+    const sig = searchParams.toString();
+    if (highlightProcessedRef.current === sig) return;
+    highlightProcessedRef.current = sig;
+
+    const fromCheckin = searchParams.get('fromCheckin') === '1';
+    const open = row.depositRest + row.rentRest + row.elecRest;
+    if (fromCheckin && open > 0) {
+      setPayAmountYuan((prev) => ({
+        ...prev,
+        [roomId]: String(Math.ceil(open / 100)),
+      }));
+    }
+
+    requestAnimationFrame(() => {
+      const tableEl = document.getElementById(`table-row-${roomId}`);
+      const payEl = document.getElementById(`pay-room-${roomId}`);
+      (tableEl ?? payEl)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    setFlashRoomId(roomId);
+    const t = window.setTimeout(() => setFlashRoomId(null), 4500);
+
+    const qs = new URLSearchParams();
+    const pid = searchParams.get('propertyId');
+    const mo = searchParams.get('month');
+    if (pid) qs.set('propertyId', pid);
+    if (mo) qs.set('month', mo);
+    const q = qs.toString();
+    router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+
+    return () => window.clearTimeout(t);
+  }, [listLoading, roomRows, searchParams, pathname, router]);
 
   const newTenantsInMonth = useMemo(() => {
     return roomRows.filter((r) => r.tenant?.checkInDate && ymFromCheckIn(r.tenant.checkInDate) === selectedMonth);
@@ -468,7 +561,7 @@ export default function PaymentsPage() {
     <PageShell>
       <PageHeader
         title="收租管理"
-        description="待收房間：收款作業置於卡片最上方（可自動帶入尚欠）；非首月請先抄表再收電費"
+        description="入住完成會帶你來此並標示該房；可關閉新入住提示；非首月請先抄表再收電費"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -523,11 +616,26 @@ export default function PaymentsPage() {
         </CardContent>
       </Card>
 
-      {newTenantsInMonth.length > 0 && (
-        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950 shadow-sm">
-          <div className="flex items-start gap-2 font-medium">
+      {!newTenantTipDismissed && newTenantsInMonth.length > 0 && (
+        <div className="relative mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 sm:p-4 text-amber-950 shadow-sm">
+          <div className="flex items-start gap-2 font-medium pr-8">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-            <span>本月有新入住租客，請注意額外收款項目：</span>
+            <span className="flex-1">本月有新入住租客，請注意額外收款項目：</span>
+            <button
+              type="button"
+              className="absolute top-3 right-3 rounded-md p-1 text-amber-900/70 hover:bg-amber-100 hover:text-amber-950"
+              aria-label="關閉提示"
+              onClick={() => {
+                try {
+                  localStorage.setItem(`payments_dismiss_newtenant_${selectedMonth}`, '1');
+                } catch {
+                  /* ignore */
+                }
+                setNewTenantTipDismissed(true);
+              }}
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
           <ul className="mt-3 space-y-4 text-sm">
             {newTenantsInMonth.map(({ room, tenant }) => {
@@ -653,7 +761,15 @@ export default function PaymentsPage() {
                         (isFirstMonth ? 0 : elec ? Number(elec.paidAmount) : 0);
                       const openSum = depositRest + rentRest + elecRest;
                       return (
-                        <TableRow key={room.id}>
+                        <TableRow
+                          key={room.id}
+                          id={`table-row-${room.id}`}
+                          className={cn(
+                            'scroll-mt-28',
+                            flashRoomId === room.id &&
+                              'bg-amber-50/90 border-l-4 border-l-amber-500 shadow-sm ring-1 ring-amber-200/70',
+                          )}
+                        >
                           <TableCell className="font-medium">{room.roomNumber}</TableCell>
                           <TableCell>{tname}</TableCell>
                           <TableCell className="text-right">{depShow}</TableCell>
@@ -746,7 +862,10 @@ export default function PaymentsPage() {
               <Card
                 key={room.id}
                 id={`pay-room-${room.id}`}
-                className="scroll-mt-24 border-slate-200 border-2 shadow-sm"
+                className={cn(
+                  'scroll-mt-24 border-slate-200 border-2 shadow-sm transition-shadow duration-300',
+                  flashRoomId === room.id && 'ring-4 ring-amber-400/45 border-amber-400',
+                )}
               >
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg">

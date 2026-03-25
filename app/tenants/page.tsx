@@ -197,7 +197,10 @@ export default function TenantsPage() {
       });
 
       await loadTenants();
-      router.push('/payments');
+      const month = data.checkInDate.slice(0, 7);
+      router.push(
+        `/payments?propertyId=${encodeURIComponent(data.propertyId)}&month=${encodeURIComponent(month)}&roomId=${encodeURIComponent(data.roomId)}&fromCheckin=1`,
+      );
     } catch (e) {
       console.error('入住失敗', e);
       const msg =
