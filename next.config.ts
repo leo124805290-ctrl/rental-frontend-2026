@@ -1,6 +1,9 @@
+import path from 'path';
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+  /** 與 monorepo 根目錄另一份 lockfile 並存時，鎖定以本專案目錄做 output trace */
+  outputFileTracingRoot: path.resolve(process.cwd()),
   /* 基礎配置 */
   reactStrictMode: true,
   // Next.js 15 已不需要 swcMinify（且會觸發警告）

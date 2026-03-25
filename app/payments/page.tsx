@@ -151,6 +151,11 @@ function PaymentsPageContent() {
   const [flashRoomId, setFlashRoomId] = useState<string | null>(null);
   const [expandedRoomId, setExpandedRoomId] = useState<string | null>(null);
   const [newTenantTipDismissed, setNewTenantTipDismissed] = useState(false);
+  const [checkinTipRoomId, setCheckinTipRoomId] = useState<string | null>(null);
+  const [payFieldErrorByRoom, setPayFieldErrorByRoom] = useState<Record<string, string>>({});
+  const [payApiErrorByRoom, setPayApiErrorByRoom] = useState<Record<string, string>>({});
+  const [meterErrorByRoom, setMeterErrorByRoom] = useState<Record<string, string>>({});
+  const [monthlyFeedback, setMonthlyFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     const m = searchParams.get('month');
@@ -329,7 +334,19 @@ function PaymentsPageContent() {
 
   useEffect(() => {
     setExpandedRoomId(null);
+    setCheckinTipRoomId(null);
   }, [selectedPropertyId, selectedMonth]);
+
+  useEffect(() => {
+    if (!expandedRoomId) return;
+    const t = window.setTimeout(() => {
+      document.getElementById(`pay-amt-${expandedRoomId}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [expandedRoomId]);
 
   useEffect(() => {
     if (!expandedRoomId) return;
@@ -371,6 +388,9 @@ function PaymentsPageContent() {
     }
 
     setExpandedRoomId(roomId);
+    if (fromCheckin && open > 0) {
+      setCheckinTipRoomId(roomId);
+    }
 
     requestAnimationFrame(() => {
       document.getElementById(`table-row-${roomId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -425,15 +445,22 @@ function PaymentsPageContent() {
   const handleGenerateMonthly = async () => {
     if (!confirm(`確定為所有已入住房間建立 ${selectedMonth} 租金帳單？已存在者略過。`)) return;
     setMonthlyBusy(true);
+    setMonthlyFeedback(null);
     try {
       const res = await api.post<{ created?: unknown[]; skipped?: unknown[] }>(
         '/api/payments/generate-monthly',
         { paymentMonth: selectedMonth },
       );
-      alert(`已建立 ${res.created?.length ?? 0} 筆，略過 ${res.skipped?.length ?? 0} 筆`);
+      setMonthlyFeedback({
+        ok: true,
+        text: `已建立 ${res.created?.length ?? 0} 筆，略過 ${res.skipped?.length ?? 0} 筆`,
+      });
       await loadContext();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : '建立失敗');
+      setMonthlyFeedback({
+        ok: false,
+        text: e instanceof ApiError ? e.message : '建立失敗',
+      });
     } finally {
       setMonthlyBusy(false);
     }
@@ -444,9 +471,10 @@ function PaymentsPageContent() {
     if (!d) return;
     const parsed = parseMeterReadingInput(d.current);
     if (parsed === null) {
-      alert('請輸入本期度數');
+      setMeterErrorByRoom((prev) => ({ ...prev, [room.id]: '請輸入本期度數' }));
       return;
     }
+    setMeterErrorByRoom((prev) => ({ ...prev, [room.id]: '' }));
     setMeterDraft((prev) => ({
       ...prev,
       [room.id]: { ...d, loading: true },
@@ -487,7 +515,10 @@ function PaymentsPageContent() {
       }
       await loadContext();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : '儲存電錶失敗');
+      setMeterErrorByRoom((prev) => ({
+        ...prev,
+        [room.id]: e instanceof ApiError ? e.message : '儲存電錶失敗',
+      }));
       setMeterDraft((prev) => ({
         ...prev,
         [room.id]: { ...prev[room.id]!, loading: false },
@@ -504,9 +535,11 @@ function PaymentsPageContent() {
     const key = room.id;
     const yuan = parseFloat((payAmountYuan[key] || '0').replace(/,/g, ''));
     if (Number.isNaN(yuan) || yuan <= 0) {
-      alert('請輸入實收金額（元）');
+      setPayFieldErrorByRoom((prev) => ({ ...prev, [key]: '請輸入實收金額（元）' }));
       return;
     }
+    setPayFieldErrorByRoom((prev) => ({ ...prev, [key]: '' }));
+    setPayApiErrorByRoom((prev) => ({ ...prev, [key]: '' }));
     setPayBusy((b) => ({ ...b, [key]: true }));
     try {
       const cents = Math.round(yuan * 100);
@@ -548,7 +581,10 @@ function PaymentsPageContent() {
       setPayAmountYuan((p) => ({ ...p, [key]: '' }));
       await loadContext();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : '收款失敗');
+      setPayApiErrorByRoom((prev) => ({
+        ...prev,
+        [key]: e instanceof ApiError ? e.message : '收款失敗',
+      }));
     } finally {
       setPayBusy((b) => ({ ...b, [key]: false }));
     }
@@ -588,6 +624,24 @@ function PaymentsPageContent() {
         }
       />
 
+      {monthlyFeedback && (
+        <Card
+          className={cn(
+            'mb-4 border',
+            monthlyFeedback.ok ? 'border-emerald-200 bg-emerald-50/60' : 'border-red-200 bg-red-50/60',
+          )}
+        >
+          <CardContent className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm">
+            <span className={monthlyFeedback.ok ? 'text-emerald-900' : 'text-red-800'}>
+              {monthlyFeedback.text}
+            </span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setMonthlyFeedback(null)}>
+              關閉
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {error && (
         <Card className="border-red-200 mb-4">
           <CardContent className="pt-6 text-red-600">{error}</CardContent>
@@ -620,6 +674,12 @@ function PaymentsPageContent() {
               onChange={(e) => setSelectedMonth(e.target.value)}
             />
           </div>
+          {selectedPropertyId ? (
+            <p className="text-sm text-muted-foreground sm:ml-1">
+              本月{' '}
+              <span className="font-semibold tabular-nums text-foreground">{stats.pend}</span> 間待收
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -717,15 +777,16 @@ function PaymentsPageContent() {
         )}
 
         {occupiedRooms.length > 0 && (
-          <Card className="overflow-x-auto">
+          <Card className="overflow-hidden">
             <CardHeader>
               <CardTitle className="text-base">收租列表（{selectedMonth}）</CardTitle>
               <CardDescription>總表快速對帳；點「收款」於列下方展開收款與抄表，再點「收合」關閉。</CardDescription>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
+            <CardContent className="pt-0">
+              <div className="max-h-[min(72vh,52rem)] overflow-auto rounded-md border">
+                <Table>
+                <TableHeader className="sticky top-0 z-20 border-b bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
+                  <TableRow className="hover:bg-transparent">
                     <TableHead>房號</TableHead>
                     <TableHead>租客</TableHead>
                     <TableHead className="text-right">押金</TableHead>
@@ -791,6 +852,7 @@ function PaymentsPageContent() {
                             id={`table-row-${room.id}`}
                             className={cn(
                               'scroll-mt-28',
+                              isExpanded && 'border-l-4 border-l-blue-600 bg-blue-50/25',
                               flashRoomId === room.id &&
                                 'bg-amber-50/90 border-l-4 border-l-amber-500 shadow-sm ring-1 ring-amber-200/70',
                             )}
@@ -805,14 +867,31 @@ function PaymentsPageContent() {
                             <TableCell className="text-right font-medium text-amber-800">
                               {settled ? '—' : formatCents(openSum)}
                             </TableCell>
-                            <TableCell>{settled ? '已結清' : '待收'}</TableCell>
+                            <TableCell>
+                              {settled ? (
+                                <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-900">
+                                  已結清
+                                </span>
+                              ) : (
+                                <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-950">
+                                  待收
+                                </span>
+                              )}
+                            </TableCell>
                             <TableCell>
                               {canPay ? (
                                 <button
                                   type="button"
                                   className="text-sm font-medium text-primary underline underline-offset-2"
                                   onClick={() =>
-                                    setExpandedRoomId((id) => (id === room.id ? null : room.id))
+                                    setExpandedRoomId((id) => {
+                                      if (id !== room.id) {
+                                        setPayFieldErrorByRoom((p) => ({ ...p, [room.id]: '' }));
+                                        setPayApiErrorByRoom((p) => ({ ...p, [room.id]: '' }));
+                                        setMeterErrorByRoom((p) => ({ ...p, [room.id]: '' }));
+                                      }
+                                      return id === room.id ? null : room.id;
+                                    })
                                   }
                                 >
                                   {isExpanded ? '收合' : '收款'}
@@ -832,10 +911,25 @@ function PaymentsPageContent() {
                               <TableCell colSpan={10} className="p-0 align-top">
                                 <div
                                   className={cn(
-                                    'border-t border-slate-200 bg-slate-50/90 p-4 space-y-4',
+                                    'border-t border-l-4 border-l-blue-600 border-slate-200 bg-slate-50/90 p-4 space-y-4',
                                     flashRoomId === room.id && 'ring-inset ring-2 ring-amber-300/60',
                                   )}
                                 >
+                                  {checkinTipRoomId === room.id ? (
+                                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950">
+                                      <span>已自入住流程帶入尚欠金額，請確認後再按「確認收款」。</span>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="shrink-0 text-sky-900"
+                                        onClick={() => setCheckinTipRoomId(null)}
+                                      >
+                                        了解
+                                      </Button>
+                                    </div>
+                                  ) : null}
+
                                   <div className="text-base font-semibold text-slate-900">
                                     {room.roomNumber} 號房 — {tname} — 月租 $
                                     {Number(room.monthlyRent || 0).toLocaleString('zh-TW')}
@@ -851,6 +945,9 @@ function PaymentsPageContent() {
                                         沖帳順序：押金 → 租金 → 電費
                                       </span>
                                     </div>
+                                    <p className="text-xs leading-relaxed text-blue-900/85 border-t border-blue-100 pt-2">
+                                      若尚無電費帳單，請先於下方填寫度數並按「儲存電錶」，再收電費。
+                                    </p>
                                     <div className="grid gap-1 rounded-md bg-white/80 px-3 py-2 text-sm border border-blue-100">
                                       {isCheckInMonth && deposit ? (
                                         <div className="flex justify-between gap-4">
@@ -903,12 +1000,14 @@ function PaymentsPageContent() {
                                           className="text-lg font-semibold h-11"
                                           inputMode="decimal"
                                           value={payAmountYuan[room.id] ?? ''}
-                                          onChange={(e) =>
+                                          onChange={(e) => {
+                                            setPayFieldErrorByRoom((p) => ({ ...p, [room.id]: '' }));
+                                            setPayApiErrorByRoom((p) => ({ ...p, [room.id]: '' }));
                                             setPayAmountYuan((p) => ({
                                               ...p,
                                               [room.id]: e.target.value,
-                                            }))
-                                          }
+                                            }));
+                                          }}
                                           placeholder={String(Math.ceil(open / 100))}
                                         />
                                       </div>
@@ -963,6 +1062,11 @@ function PaymentsPageContent() {
                                         />
                                       </div>
                                     </div>
+                                    {(payFieldErrorByRoom[room.id] || payApiErrorByRoom[room.id]) && (
+                                      <p className="text-sm text-red-600" role="alert">
+                                        {payFieldErrorByRoom[room.id] || payApiErrorByRoom[room.id]}
+                                      </p>
+                                    )}
                                     <div className="flex flex-wrap gap-2">
                                       <Button
                                         type="button"
@@ -979,40 +1083,13 @@ function PaymentsPageContent() {
                                     </div>
                                   </div>
 
-                                  <div className="rounded-lg border bg-white p-4 space-y-2">
-                                    <div className="flex flex-wrap justify-between gap-2">
-                                      <span className="font-medium">【押金】</span>
-                                      <span>
-                                        {isCheckInMonth ? formatCurrency(room.depositAmount) : '—'}{' '}
-                                        <span className="text-muted-foreground text-sm">
-                                          （{isCheckInMonth ? '入住當月顯示' : '非入住月不列押金'}）
-                                        </span>
-                                        {isCheckInMonth && deposit ? (
-                                          <span className="text-red-600 ml-2">
-                                            帳單：{formatCents(deposit.totalAmount)} —{' '}
-                                            {depositRest > 0 ? '待收' : '已收'}
-                                          </span>
-                                        ) : null}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  <div className="rounded-lg border bg-white p-4 space-y-2">
-                                    <div className="flex flex-wrap justify-between gap-2">
-                                      <span className="font-medium">【租金】</span>
-                                      <span>
-                                        {selectedMonth.replace('-', '年')}月租金：
-                                        {rent ? formatCents(rent.totalAmount) : '—'}{' '}
-                                        <span className="text-red-600">
-                                          狀態：
-                                          {rent ? (rentRest > 0 ? '待收' : '已收') : '無帳單'}
-                                        </span>
-                                      </span>
-                                    </div>
-                                  </div>
-
                                   <div className="rounded-lg border bg-white p-4 space-y-3">
                                     <div className="font-medium">【電費】</div>
+                                    {meterErrorByRoom[room.id] ? (
+                                      <p className="text-sm text-red-600" role="alert">
+                                        {meterErrorByRoom[room.id]}
+                                      </p>
+                                    ) : null}
                                     <div className="grid gap-3 sm:grid-cols-2">
                                       <div>
                                         <Label className="text-muted-foreground">上期度數</Label>
@@ -1027,7 +1104,8 @@ function PaymentsPageContent() {
                                           min={0}
                                           step="1"
                                           value={curVal}
-                                          onChange={(e) =>
+                                          onChange={(e) => {
+                                            setMeterErrorByRoom((p) => ({ ...p, [room.id]: '' }));
                                             setMeterDraft((m) => ({
                                               ...m,
                                               [room.id]: {
@@ -1036,8 +1114,8 @@ function PaymentsPageContent() {
                                                 prev: m[room.id]?.prev ?? null,
                                                 loading: m[room.id]?.loading ?? false,
                                               },
-                                            }))
-                                          }
+                                            }));
+                                          }}
                                           placeholder="例如 960 或 0"
                                         />
                                       </div>
@@ -1086,22 +1164,62 @@ function PaymentsPageContent() {
                                     ) : null}
                                   </div>
 
-                                  <div className="rounded-lg border bg-slate-100 p-4 space-y-2">
-                                    <div className="font-medium">【合計】</div>
-                                    <p>
-                                      {isCheckInMonth && deposit
-                                        ? `押金 ${formatCents(deposit.totalAmount)} + `
-                                        : ''}
-                                      租金 {rent ? formatCents(rent.totalAmount) : '$0'}
-                                      {elec
-                                        ? ` + 電費 ${formatCents(elec.totalAmount)}`
-                                        : ' + 電費 $0'}{' '}
-                                      = 本月合計 {formatCents(totalMonth)}
-                                    </p>
-                                    <p className="text-sm text-muted-foreground">
-                                      已收 {formatCents(paidMonth)}，尚欠 {formatCents(open)}
-                                    </p>
-                                  </div>
+                                  <details className="rounded-lg border border-slate-200 bg-white open:shadow-sm">
+                                    <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-muted-foreground hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                                      <span className="underline decoration-dotted underline-offset-2">
+                                        展開費用明細
+                                      </span>
+                                      <span className="ml-2 text-xs font-normal">（押金／租金／合計）</span>
+                                    </summary>
+                                    <div className="space-y-4 border-t border-slate-100 p-4">
+                                      <div className="rounded-lg border bg-slate-50/80 p-4 space-y-2">
+                                        <div className="flex flex-wrap justify-between gap-2">
+                                          <span className="font-medium">【押金】</span>
+                                          <span>
+                                            {isCheckInMonth ? formatCurrency(room.depositAmount) : '—'}{' '}
+                                            <span className="text-muted-foreground text-sm">
+                                              （{isCheckInMonth ? '入住當月顯示' : '非入住月不列押金'}）
+                                            </span>
+                                            {isCheckInMonth && deposit ? (
+                                              <span className="text-red-600 ml-2">
+                                                帳單：{formatCents(deposit.totalAmount)} —{' '}
+                                                {depositRest > 0 ? '待收' : '已收'}
+                                              </span>
+                                            ) : null}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="rounded-lg border bg-slate-50/80 p-4 space-y-2">
+                                        <div className="flex flex-wrap justify-between gap-2">
+                                          <span className="font-medium">【租金】</span>
+                                          <span>
+                                            {selectedMonth.replace('-', '年')}月租金：
+                                            {rent ? formatCents(rent.totalAmount) : '—'}{' '}
+                                            <span className="text-red-600">
+                                              狀態：
+                                              {rent ? (rentRest > 0 ? '待收' : '已收') : '無帳單'}
+                                            </span>
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="rounded-lg border bg-slate-100 p-4 space-y-2">
+                                        <div className="font-medium">【合計】</div>
+                                        <p>
+                                          {isCheckInMonth && deposit
+                                            ? `押金 ${formatCents(deposit.totalAmount)} + `
+                                            : ''}
+                                          租金 {rent ? formatCents(rent.totalAmount) : '$0'}
+                                          {elec
+                                            ? ` + 電費 ${formatCents(elec.totalAmount)}`
+                                            : ' + 電費 $0'}{' '}
+                                          = 本月合計 {formatCents(totalMonth)}
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                          已收 {formatCents(paidMonth)}，尚欠 {formatCents(open)}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </details>
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -1112,6 +1230,7 @@ function PaymentsPageContent() {
                   )}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         )}
