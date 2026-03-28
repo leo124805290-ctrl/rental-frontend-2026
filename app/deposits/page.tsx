@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { formatCents, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
@@ -38,22 +39,65 @@ interface PropertyOpt {
   name: string;
 }
 
+interface DepositPaymentLine {
+  roomId: string;
+  tenantId: string | null;
+  lineType: string;
+  totalAmount: number;
+  paidAmount: number;
+}
+
+function receiptStatus(
+  d: DepositRow,
+  payments: DepositPaymentLine[],
+): { label: string; danger: boolean } {
+  if (d.type !== '收取') return { label: '—', danger: false };
+  const match = payments.filter(
+    (p) =>
+      p.lineType === 'deposit' &&
+      p.roomId === d.roomId &&
+      (!d.tenantId || p.tenantId === d.tenantId),
+  );
+  if (match.length === 0) return { label: '尚未收款', danger: true };
+  const settled = match.some(
+    (p) => Number(p.totalAmount) > 0 && Number(p.paidAmount) >= Number(p.totalAmount),
+  );
+  if (settled) return { label: '已收款', danger: false };
+  const anyPaid = match.some((p) => Number(p.paidAmount) > 0);
+  if (anyPaid) return { label: '部分收款', danger: true };
+  return { label: '尚未收款', danger: true };
+}
+
 export default function DepositsPage() {
   const [properties, setProperties] = useState<PropertyOpt[]>([]);
   const [rooms, setRooms] = useState<RoomOpt[]>([]);
   const [propertyId, setPropertyId] = useState<string>('all');
   const [roomId, setRoomId] = useState<string>('all');
   const [rows, setRows] = useState<DepositRow[]>([]);
+  const [depositPayments, setDepositPayments] = useState<DepositPaymentLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadMeta = useCallback(async () => {
-    const [plist, rlist] = await Promise.all([
+    const [plist, rlist, pays] = await Promise.all([
       api.get<PropertyOpt[]>('/api/properties'),
       api.get<RoomOpt[]>('/api/rooms'),
+      api.get<Array<Record<string, unknown>>>('/api/payments').catch(() => []),
     ]);
     setProperties(Array.isArray(plist) ? plist : []);
     setRooms(Array.isArray(rlist) ? rlist : []);
+    const raw = Array.isArray(pays) ? pays : [];
+    setDepositPayments(
+      raw
+        .filter((p) => String(p['lineType'] ?? p['line_type'] ?? '') === 'deposit')
+        .map((p) => ({
+          roomId: String(p['roomId'] ?? p['room_id'] ?? ''),
+          tenantId: (p['tenantId'] ?? p['tenant_id']) as string | null,
+          lineType: 'deposit',
+          totalAmount: Number(p['totalAmount'] ?? p['total_amount'] ?? 0),
+          paidAmount: Number(p['paidAmount'] ?? p['paid_amount'] ?? 0),
+        })),
+    );
   }, []);
 
   const loadDeposits = useCallback(async () => {
@@ -105,14 +149,14 @@ export default function DepositsPage() {
   return (
     <PageShell>
       <PageHeader
-        title="押金紀錄"
-        description="僅供查詢：押金相關流水（收取、退還、調整等）。實際收款與沖帳請至「繳款明細」。"
+        title="押金管理"
+        description="僅供查詢：押金相關流水（收取、退還、調整等）。「是否已收款」係比對收款明細中押金帳單列之沖帳狀態。實際收款請至「收款明細」。"
       />
 
       <Card className="mb-4 border-slate-300 bg-slate-50">
         <CardContent className="py-3 text-sm text-slate-800">
           <span className="font-medium">只讀</span>
-          ：本頁不提供收款按鈕。請至側邊欄「繳款明細」處理當月帳單與入住首月押金沖帶。
+          ：本頁不提供收款按鈕。請至側邊欄「收款明細」處理當月帳單與入住首月押金沖帶。
         </CardContent>
       </Card>
 
@@ -186,6 +230,7 @@ export default function DepositsPage() {
                 <TableRow>
                   <TableHead>日期</TableHead>
                   <TableHead>類型</TableHead>
+                  <TableHead>是否已收款</TableHead>
                   <TableHead>房號</TableHead>
                   <TableHead>物業</TableHead>
                   <TableHead>說明</TableHead>
@@ -195,7 +240,7 @@ export default function DepositsPage() {
               <TableBody>
                 {filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-10">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
                       尚無紀錄
                     </TableCell>
                   </TableRow>
@@ -205,10 +250,21 @@ export default function DepositsPage() {
                     const rid = rooms.find((x) => x.id === d.roomId)?.propertyId;
                     const pname = rid ? propertyNameById.get(rid) ?? '—' : '—';
                     const dt = d.depositDate ?? d.createdAt;
+                    const rs = receiptStatus(d, depositPayments);
                     return (
                       <TableRow key={d.id}>
                         <TableCell>{dt ? formatDate(dt) : '—'}</TableCell>
                         <TableCell>{d.type}</TableCell>
+                        <TableCell>
+                          <span
+                            className={cn(
+                              rs.danger && 'font-medium text-red-600',
+                              !rs.danger && rs.label === '已收款' && 'text-emerald-700',
+                            )}
+                          >
+                            {rs.label}
+                          </span>
+                        </TableCell>
                         <TableCell>{rn}</TableCell>
                         <TableCell>{pname}</TableCell>
                         <TableCell className="max-w-[240px] truncate">{d.description ?? '—'}</TableCell>

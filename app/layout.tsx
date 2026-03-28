@@ -15,14 +15,16 @@ import {
   UserCog,
   Menu,
   History,
+  DoorOpen,
 } from 'lucide-react';
 import { UserSessionMenu } from '@/components/app-shell/user-session-menu';
 
 const navItems = [
   { href: '/dashboard', label: '儀表板', icon: LayoutDashboard },
   { href: '/properties', label: '物業管理', icon: Building },
-  { href: '/payment-details', label: '繳款明細', icon: CreditCard },
-  { href: '/deposits', label: '押金紀錄', icon: History },
+  { href: '/rooms', label: '房間管理', icon: DoorOpen },
+  { href: '/payment-details', label: '收款明細', icon: CreditCard },
+  { href: '/deposits', label: '押金管理', icon: History },
   { href: '/checkout', label: '退租結算', icon: LogOut },
   { href: '/finance', label: '收支管理', icon: Wallet },
   { href: '/reports', label: '損益報表', icon: BarChart3 },
@@ -33,9 +35,10 @@ const navItems = [
 function pageTitleFromPath(pathname: string): string {
   if (pathname === '/' || pathname === '/dashboard') return '儀表板';
   if (pathname === '/properties') return '物業管理';
-  if (pathname.startsWith('/properties/')) return '房間管理';
-  if (pathname === '/payment-details' || pathname === '/payments') return '繳款明細';
-  if (pathname === '/deposits') return '押金紀錄';
+  if (pathname.startsWith('/properties/')) return '物業詳情';
+  if (pathname === '/rooms') return '房間管理';
+  if (pathname === '/payment-details' || pathname === '/payments') return '收款明細';
+  if (pathname === '/deposits') return '押金管理';
   if (pathname === '/checkout') return '退租結算';
   if (pathname === '/finance') return '收支管理';
   if (pathname === '/reports') return '損益報表';
@@ -52,6 +55,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   const isActive = (href: string) => {
     if (href === '/dashboard' && pathname === '/') return true;
     if (href === '/properties') return pathname === '/properties';
+    if (href === '/rooms') return pathname === '/rooms';
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 

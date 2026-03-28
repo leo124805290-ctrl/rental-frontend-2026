@@ -322,9 +322,9 @@ export default function PropertiesPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-4">
-                  <Link href={`/properties/${property.id}`} className="flex-1 min-w-0">
-                    <Button type="button" size="sm" className="w-full bg-blue-600 hover:bg-blue-700 text-white">
-                      管理房間
+                  <Link href={`/rooms?propertyId=${encodeURIComponent(property.id)}`} className="flex-1 min-w-0">
+                    <Button type="button" size="sm" variant="secondary" className="w-full">
+                      房間列表
                     </Button>
                   </Link>
                   <Button

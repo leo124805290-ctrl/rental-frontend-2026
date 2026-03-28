@@ -1,255 +1,269 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { api } from '@/lib/api-client';
-import { formatCurrency } from '@/lib/utils';
+import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import Link from 'next/link';
-import { Building, Home } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Loader2 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
+import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 
 interface Property {
   id: string;
   name: string;
+  address?: string;
+  status?: string;
 }
 
-type RoomStatus = 'vacant' | 'occupied' | 'reserved' | 'maintenance';
-
-interface Room {
+interface RoomRow {
   id: string;
   propertyId: string;
   roomNumber: string;
   floor: number;
   monthlyRent: number;
   depositAmount: number;
-  electricityRate: number;
-  status: RoomStatus | string;
-  deletedAt?: string | null;
+  status: string;
 }
 
-const roomStatusConfig: Record<RoomStatus, { label: string; color: string }> = {
-  vacant: { label: '空房', color: 'bg-gray-100 text-gray-800 border-gray-200' },
-  occupied: { label: '已入住', color: 'bg-green-100 text-green-800 border-green-200' },
-  reserved: { label: '已預訂', color: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-  maintenance: { label: '維修中', color: 'bg-red-100 text-red-800 border-red-200' },
+interface TenantMini {
+  id: string;
+  roomId: string;
+  nameZh: string;
+  nameVi: string;
+}
+
+const statusLabel: Record<string, string> = {
+  vacant: '空房',
+  occupied: '已入住',
+  reserved: '已預訂',
+  maintenance: '維修中',
 };
 
-export default function RoomsPage() {
+function RoomsPageInner() {
+  const searchParams = useSearchParams();
+  const initialPid = searchParams.get('propertyId') || 'all';
+
   const [properties, setProperties] = useState<Property[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [selectedPropertyId, setSelectedPropertyId] = useState<string>('all');
-  const [isLoading, setIsLoading] = useState(true);
+  const [rooms, setRooms] = useState<RoomRow[]>([]);
+  const [tenants, setTenants] = useState<TenantMini[]>([]);
+  const [propertyFilter, setPropertyFilter] = useState(initialPid);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const [props, rms] = await Promise.all([
-          api.get<Property[]>('/api/properties'),
-          api.get<Room[]>('/api/rooms'),
-        ]);
-        setProperties(props);
-        setRooms(rms);
-      } catch (err) {
-        console.error('載入房間列表失敗', err);
-        setError('載入房間資料失敗，請稍後再試');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    load();
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [plist, rlist, tlist] = await Promise.all([
+        api.get<Property[]>('/api/properties'),
+        api.get<RoomRow[]>('/api/rooms'),
+        api.get<TenantMini[]>('/api/tenants'),
+      ]);
+      setProperties(Array.isArray(plist) ? plist.filter((p) => p.status !== 'archived') : []);
+      setRooms(
+        (Array.isArray(rlist) ? rlist : []).map((r) => ({
+          ...r,
+          roomNumber: String((r as { roomNumber?: string }).roomNumber ?? ''),
+          propertyId: String((r as { propertyId?: string }).propertyId ?? ''),
+          floor: Number((r as { floor?: number }).floor ?? 0),
+          monthlyRent: Number((r as { monthlyRent?: number }).monthlyRent ?? 0),
+          depositAmount: Number((r as { depositAmount?: number }).depositAmount ?? 0),
+          status: String((r as { status?: string }).status ?? ''),
+        })),
+      );
+      setTenants(
+        (Array.isArray(tlist) ? tlist : []).map((t) => ({
+          id: String(t.id),
+          roomId: String((t as { roomId?: string }).roomId ?? ''),
+          nameZh: (t as { nameZh?: string }).nameZh ?? '',
+          nameVi: (t as { nameVi?: string }).nameVi ?? '',
+        })),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '載入失敗');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const propertyMap = useMemo(
-    () => new Map(properties.map((p) => [p.id, p.name])),
-    [properties]
-  );
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  const filteredRooms = useMemo(
-    () =>
-      rooms.filter((room) => {
-        // 避免顯示「已不在管理清單」的物業所屬房間（例如剛封存/刪除）
-        if (!propertyMap.has(room.propertyId)) return false;
-        return selectedPropertyId === 'all' ? true : room.propertyId === selectedPropertyId;
-      }),
-    [rooms, selectedPropertyId, propertyMap]
-  );
+  useEffect(() => {
+    const p = searchParams.get('propertyId');
+    if (p) setPropertyFilter(p);
+  }, [searchParams]);
 
-  const stats = useMemo(() => {
-    const total = filteredRooms.length;
-    const occupied = filteredRooms.filter((r) => r.status === 'occupied').length;
-    const vacant = filteredRooms.filter((r) => r.status === 'vacant').length;
-    const reserved = filteredRooms.filter((r) => r.status === 'reserved').length;
-    const maintenance = filteredRooms.filter((r) => r.status === 'maintenance').length;
-    const rate = total ? Math.round((occupied / total) * 100) : 0;
-    return { total, occupied, vacant, reserved, maintenance, rate };
-  }, [filteredRooms]);
+  const propName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of properties) m.set(p.id, p.name);
+    return m;
+  }, [properties]);
+
+  const tenantByRoom = useMemo(() => {
+    const m = new Map<string, TenantMini>();
+    for (const t of tenants) {
+      if (t.roomId) m.set(t.roomId, t);
+    }
+    return m;
+  }, [tenants]);
+
+  const filteredRooms = useMemo(() => {
+    if (propertyFilter === 'all') return rooms;
+    return rooms.filter((r) => r.propertyId === propertyFilter);
+  }, [rooms, propertyFilter]);
+
+  const sortedRooms = useMemo(() => {
+    return [...filteredRooms].sort((a, b) => {
+      const na = propName.get(a.propertyId) ?? '';
+      const nb = propName.get(b.propertyId) ?? '';
+      if (na !== nb) return na.localeCompare(nb, 'zh-Hant');
+      return a.roomNumber.localeCompare(b.roomNumber, 'zh-Hant', { numeric: true });
+    });
+  }, [filteredRooms, propName]);
 
   return (
     <PageShell>
       <PageHeader
         title="房間管理"
-        description="跨物業檢視與篩選所有房間"
+        description="檢視與篩選所有房間；新增／編輯房間與租客請至對應物業內操作。"
         actions={
-          <div className="flex items-center gap-3">
-            <select
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm"
-              value={selectedPropertyId}
-              onChange={(e) => setSelectedPropertyId(e.target.value)}
-            >
-              <option value="all">全部物業</option>
-              {properties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            {selectedPropertyId !== 'all' && (
-              <Link href={`/properties/${selectedPropertyId}`}>
-                <Button variant="outline" size="sm">
-                  <Building className="h-4 w-4 mr-1" />
-                  前往物業
-                </Button>
-              </Link>
-            )}
-          </div>
+          <Button type="button" variant="outline" onClick={() => void load()} disabled={loading}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            重新整理
+          </Button>
         }
       />
 
+      <Card className="mb-4 border-dashed">
+        <CardContent className="py-3 text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">物業管理</span>
+          僅維護房東合約與物業主檔；本頁集中檢視各房狀態。若要編輯單一房間或辦入住，請點「前往物業」。
+        </CardContent>
+      </Card>
+
+      <Card className="mb-4">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">篩選</CardTitle>
+          <CardDescription>依物業縮小列表</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-4">
+          <div className="space-y-1">
+            <span className="text-sm font-medium">物業</span>
+            <Select value={propertyFilter} onValueChange={setPropertyFilter}>
+              <SelectTrigger className="w-[240px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部物業</SelectItem>
+                {properties.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
       {error && (
-        <Card className="mb-6 border-red-200 bg-red-50">
-          <CardContent className="pt-4 pb-4">
-            <div className="text-center text-red-600 text-sm">{error}</div>
-          </CardContent>
+        <Card className="mb-4 border-red-200">
+          <CardContent className="pt-6 text-red-600">{error}</CardContent>
         </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="text-sm text-gray-600">總房數</div>
-            <div className="mt-1 text-2xl font-bold text-gray-900">{stats.total}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="text-sm text-gray-600">已入住</div>
-            <div className="mt-1 flex items-center gap-2">
-              <span className="text-2xl font-bold text-green-700">{stats.occupied}</span>
-              <span className="text-xs text-gray-500">
-                入住率 {stats.rate}
-                %
-              </span>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">房間列表</CardTitle>
+          <CardDescription>共 {sortedRooms.length} 間</CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          {loading ? (
+            <div className="flex items-center gap-2 py-16 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              載入中…
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="text-sm text-gray-600">空房</div>
-            <div className="mt-1 text-2xl font-bold text-gray-900">{stats.vacant}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="text-sm text-gray-600">維修中</div>
-            <div className="mt-1 text-2xl font-bold text-red-600">{stats.maintenance}</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i} className="animate-pulse">
-              <CardHeader>
-                <div className="h-5 bg-gray-200 rounded w-1/2 mb-2" />
-                <div className="h-4 bg-gray-200 rounded w-1/3" />
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="h-4 bg-gray-200 rounded w-full" />
-                  <div className="h-4 bg-gray-200 rounded w-2/3" />
-                  <div className="h-4 bg-gray-200 rounded w-1/2" />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : filteredRooms.length === 0 ? (
-        <Card>
-          <CardContent className="pt-10 pb-10">
-            <div className="text-center">
-              <Home className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <div className="text-gray-700 font-medium mb-1">目前沒有符合條件的房間</div>
-              <div className="text-gray-500 text-sm">
-                嘗試切換上方物業篩選，或從物業頁面建立新房間
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredRooms.map((room) => (
-            <Card key={room.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <CardTitle className="text-lg font-bold text-gray-900">
-                      {room.roomNumber} 號房
-                    </CardTitle>
-                    <div className="text-xs text-gray-500 mt-1">
-                      {propertyMap.get(room.propertyId) || '未知物業'} · {room.floor} 樓
-                    </div>
-                  </div>
-                  {(() => {
-                    const meta =
-                      roomStatusConfig[room.status as RoomStatus] ??
-                      roomStatusConfig.vacant;
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>物業</TableHead>
+                  <TableHead>房號</TableHead>
+                  <TableHead className="text-right">樓層</TableHead>
+                  <TableHead>狀態</TableHead>
+                  <TableHead className="text-right">月租</TableHead>
+                  <TableHead>租客</TableHead>
+                  <TableHead className="w-[120px]">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedRooms.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                      尚無房間資料
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  sortedRooms.map((r) => {
+                    const tn = tenantByRoom.get(r.id);
+                    const name = tn?.nameZh || tn?.nameVi || '—';
+                    const st = statusLabel[r.status] ?? r.status;
                     return (
-                      <Badge className={meta.color}>
-                        {meta.label}
-                      </Badge>
+                      <TableRow key={r.id}>
+                        <TableCell className="font-medium">{propName.get(r.propertyId) ?? '—'}</TableCell>
+                        <TableCell>{r.roomNumber}</TableCell>
+                        <TableCell className="text-right tabular-nums">{r.floor}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="font-normal">
+                            {st}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">{formatCurrency(r.monthlyRent)}</TableCell>
+                        <TableCell>{r.status === 'occupied' ? name : '—'}</TableCell>
+                        <TableCell>
+                          <Button variant="secondary" size="sm" asChild>
+                            <Link href={`/properties/${r.propertyId}`}>前往物業</Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
                     );
-                  })()}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">月租金</span>
-                  <span className="font-semibold text-gray-900">
-                    {formatCurrency(room.monthlyRent)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">押金</span>
-                  <span className="font-semibold text-gray-900">
-                    {formatCurrency(room.depositAmount)}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">電費單價</span>
-                  <span className="font-semibold text-gray-900">
-                    {(room.electricityRate / 100).toFixed(2)} 元/度
-                  </span>
-                </div>
-                <div className="pt-2">
-                  <Link href={`/properties/${room.propertyId}`}>
-                    <Button variant="outline" size="sm" className="w-full">
-                      前往房間管理
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+                  })
+                )}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </PageShell>
   );
 }
 
+export default function RoomsPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageShell>
+          <div className="flex justify-center py-24 text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        </PageShell>
+      }
+    >
+      <RoomsPageInner />
+    </Suspense>
+  );
+}

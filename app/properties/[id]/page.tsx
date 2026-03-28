@@ -548,10 +548,15 @@ export default function PropertyDetailPage() {
   return (
     <PageShell>
       <PageHeader
-        title={`${property.name} — 房間管理`}
-        description={`總 ${roomStats.total} 間｜已入住 ${roomStats.occupied}｜空房 ${roomStats.vacant}｜維修 ${roomStats.maintenance}｜入住率 ${occupancyRate}%｜月租金收入 $${monthlyRentIncome.toLocaleString('zh-TW')}`}
+        title={`${property.name} — 物業詳情`}
+        description={`總 ${roomStats.total} 間｜已入住 ${roomStats.occupied}｜空房 ${roomStats.vacant}｜維修 ${roomStats.maintenance}｜入住率 ${occupancyRate}%｜月租金收入 $${monthlyRentIncome.toLocaleString('zh-TW')}。亦可在側邊欄「房間管理」檢視全部房間。`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={`/rooms?propertyId=${encodeURIComponent(property.id)}`}>
+              <Button variant="secondary" size="sm">
+                房間總表
+              </Button>
+            </Link>
             <Link href="/properties">
               <Button variant="outline" size="sm">
                 <ArrowLeft className="h-4 w-4 mr-2" />
@@ -1006,7 +1011,7 @@ export default function PropertyDetailPage() {
           <DialogHeader>
             <DialogTitle>安排入住{checkinRoom ? `－${checkinRoom.roomNumber} 號房` : ''}</DialogTitle>
             <DialogDescription>
-              送出後房間將標示為已入住，並產生押金／首月租金待收單；請至收租管理收款。
+              送出後房間將標示為已入住，並產生押金／首月租金待收單；請至「收款明細」收款。
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmitCheckin}>

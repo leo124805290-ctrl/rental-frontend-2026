@@ -88,6 +88,7 @@ export default function CheckoutPage() {
   const [properties, setProperties] = useState<Record<string, PropertyApi>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** 空字串表示選「全部租客」，不進行退租表單 */
   const [selectedTenantId, setSelectedTenantId] = useState<string>('');
   const [checkoutDateYmd, setCheckoutDateYmd] = useState<string>(() => localTodayYmd());
   const [finalMeter, setFinalMeter] = useState<string>('');
@@ -171,8 +172,7 @@ export default function CheckoutPage() {
       setRooms(roomsMap);
       setProperties(propsMap);
 
-      const firstActive = normalizedTenants.find((t) => t.status !== 'checked_out');
-      setSelectedTenantId(firstActive?.id ?? '');
+      setSelectedTenantId('');
     } catch (error) {
       setError('載入資料失敗');
       console.error('載入錯誤:', error);
@@ -401,14 +401,14 @@ export default function CheckoutPage() {
                   <div className="space-y-2">
                     <Label htmlFor="tenant">租客</Label>
                     <Select
-                      value={selectedTenantId || '__none__'}
-                      onValueChange={(v) => setSelectedTenantId(v === '__none__' ? '' : v)}
+                      value={selectedTenantId === '' ? '__all__' : selectedTenantId}
+                      onValueChange={(v) => setSelectedTenantId(v === '__all__' ? '' : v)}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="選擇要退租的租客" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none__">請選擇租客</SelectItem>
+                        <SelectItem value="__all__">全部（請先選定租客再填寫退租資料）</SelectItem>
                         {activeTenants.map((t) => {
                           const room = rooms[t.roomId];
                           const label = `${t.nameZh || t.nameVi || '未命名'}（${room?.roomNumber || '—'}）`;
@@ -421,6 +421,12 @@ export default function CheckoutPage() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {selectedTenantId === '' && activeTenants.length > 0 && (
+                    <div className="rounded-md border border-dashed border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-950">
+                      已選「全部」：請從下拉選單指定<strong>一位租客</strong>以填寫退租日、電表與送出結算。
+                    </div>
+                  )}
 
                   {selectedTenant && selectedRoom && (
                     <>

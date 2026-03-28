@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertTriangle, CalendarRange, Loader2, RefreshCw, Banknote, X } from 'lucide-react';
-import { cn, formatCents, formatCurrency } from '@/lib/utils';
+import { cn, formatCents, formatCurrency, formatDate } from '@/lib/utils';
 import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
@@ -68,6 +68,9 @@ interface PaymentRow {
   totalAmount: number;
   paidAmount: number;
   paymentStatus: string;
+  /** 帳單列建立時間（ISO） */
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 function localTodayYmd(): string {
@@ -91,6 +94,19 @@ function nextMonthLabelFromYm(ym: string): string {
 function restCents(p: PaymentRow | null): number {
   if (!p) return 0;
   return Math.max(0, Number(p.totalAmount || 0) - Number(p.paidAmount || 0));
+}
+
+/** 帳單列產生時間：取押金／租金／電費三列中最早的 createdAt */
+function earliestBillCreatedAt(
+  deposit: PaymentRow | null,
+  rent: PaymentRow | null,
+  elec: PaymentRow | null,
+): string | null {
+  const dates = [deposit?.createdAt, rent?.createdAt, elec?.createdAt].filter(Boolean) as string[];
+  if (dates.length === 0) return null;
+  const times = dates.map((d) => new Date(d).getTime()).filter((t) => !Number.isNaN(t));
+  if (times.length === 0) return null;
+  return new Date(Math.min(...times)).toISOString();
 }
 
 function estimateElectricityFeeCents(usageDeg: number, electricityRateCentsPerDeg: number): number {
@@ -603,8 +619,8 @@ function PaymentsPageContent() {
   return (
     <PageShell>
       <PageHeader
-        title="繳款明細"
-        description="月租、電費與入住當月押金皆在此沖帶（押金僅入住首月出現於此）。入住完成可自動開啟該房列；點「收款」展開抄表與確認金額。「押金紀錄」僅供查詢歷史流水。"
+        title="收款明細"
+        description="月租、電費與入住當月押金皆在此沖帶（押金僅入住首月出現於此）。入住完成可自動開啟該房列；點「收款」展開抄表與確認金額。「押金管理」僅供查詢歷史流水。"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -779,14 +795,15 @@ function PaymentsPageContent() {
         {occupiedRooms.length > 0 && (
           <Card className="overflow-hidden">
             <CardHeader>
-              <CardTitle className="text-base">繳款明細（{selectedMonth}）</CardTitle>
-              <CardDescription>總表快速對帳；點「收款」於列下方展開收款與抄表，再點「收合」關閉。</CardDescription>
+              <CardTitle className="text-base">收款明細（{selectedMonth}）</CardTitle>
+              <CardDescription>總表快速對帳；「產生日期」為該房當月帳單列最早建立時間。點「收款」於列下方展開收款與抄表。</CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
               <div className="max-h-[min(72vh,52rem)] overflow-auto rounded-md border">
                 <Table>
                 <TableHeader className="sticky top-0 z-20 border-b bg-background/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/85">
                   <TableRow className="hover:bg-transparent">
+                    <TableHead className="whitespace-nowrap">產生日期</TableHead>
                     <TableHead>房號</TableHead>
                     <TableHead>租客</TableHead>
                     <TableHead className="text-right">押金</TableHead>
@@ -849,6 +866,7 @@ function PaymentsPageContent() {
                         (rent ? Number(rent.paidAmount) : 0) +
                         (elec ? Number(elec.paidAmount) : 0);
                       const open = depositRest + rentRest + elecRest;
+                      const billCreated = earliestBillCreatedAt(deposit, rent, elec);
 
                       return (
                         <Fragment key={room.id}>
@@ -861,6 +879,9 @@ function PaymentsPageContent() {
                                 'bg-amber-50/90 border-l-4 border-l-amber-500 shadow-sm ring-1 ring-amber-200/70',
                             )}
                           >
+                            <TableCell className="whitespace-nowrap text-muted-foreground text-sm">
+                              {billCreated ? formatDate(billCreated, 'short') : '—'}
+                            </TableCell>
                             <TableCell className="font-medium">{room.roomNumber}</TableCell>
                             <TableCell>{tname}</TableCell>
                             <TableCell className="text-right">{depShow}</TableCell>
@@ -912,7 +933,7 @@ function PaymentsPageContent() {
                                 'hover:bg-transparent',
                               )}
                             >
-                              <TableCell colSpan={10} className="p-0 align-top">
+                              <TableCell colSpan={11} className="p-0 align-top">
                                 <div
                                   className={cn(
                                     'border-t border-l-4 border-l-blue-600 border-slate-200 bg-slate-50/90 p-4 space-y-4',
