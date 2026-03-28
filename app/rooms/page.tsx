@@ -53,12 +53,12 @@ const statusLabel: Record<string, string> = {
 
 function RoomsPageInner() {
   const searchParams = useSearchParams();
-  const initialPid = searchParams.get('propertyId') || 'all';
 
   const [properties, setProperties] = useState<Property[]>([]);
   const [rooms, setRooms] = useState<RoomRow[]>([]);
   const [tenants, setTenants] = useState<TenantMini[]>([]);
-  const [propertyFilter, setPropertyFilter] = useState(initialPid);
+  /** 必須永遠對應 Select 內存在的 value，避免 Radix 在選項未載入時拋錯 */
+  const [propertyFilter, setPropertyFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,10 +102,20 @@ function RoomsPageInner() {
     void load();
   }, [load]);
 
+  /** URL ?propertyId= 須等物業列表載入後再套用，否則 Select value 無選項會造成 client exception */
   useEffect(() => {
     const p = searchParams.get('propertyId');
-    if (p) setPropertyFilter(p);
-  }, [searchParams]);
+    if (!p) {
+      setPropertyFilter('all');
+      return;
+    }
+    if (properties.length === 0) return;
+    if (properties.some((x) => x.id === p)) {
+      setPropertyFilter(p);
+    } else {
+      setPropertyFilter('all');
+    }
+  }, [searchParams, properties]);
 
   const propName = useMemo(() => {
     const m = new Map<string, string>();
@@ -232,7 +242,9 @@ function RoomsPageInner() {
                             {st}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">{formatCurrency(r.monthlyRent)}</TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(Number.isFinite(r.monthlyRent) ? r.monthlyRent : 0)}
+                        </TableCell>
                         <TableCell>{r.status === 'occupied' ? name : '—'}</TableCell>
                         <TableCell>
                           <Button variant="secondary" size="sm" asChild>

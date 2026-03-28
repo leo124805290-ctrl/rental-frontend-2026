@@ -9,7 +9,6 @@ import { Plus, Edit, Trash2, Building, MapPin, Phone, Calendar } from 'lucide-re
 import { formatCurrency, formatDate } from '@/lib/utils';
 import PropertyForm, { type PropertyFormData, type PropertyFormSubmitData } from './components/property-form';
 import { api } from '@/lib/api-client';
-import Link from 'next/link';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 
@@ -322,16 +321,11 @@ export default function PropertiesPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-4">
-                  <Link href={`/rooms?propertyId=${encodeURIComponent(property.id)}`} className="flex-1 min-w-0">
-                    <Button type="button" size="sm" variant="secondary" className="w-full">
-                      房間列表
-                    </Button>
-                  </Link>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="sm:flex-1"
+                    className="flex-1 sm:flex-1"
                     onClick={() => handleEditProperty(property)}
                   >
                     <Edit className="h-4 w-4 mr-2" />

@@ -898,7 +898,7 @@ function PaymentsPageContent() {
                                   已結清
                                 </span>
                               ) : (
-                                <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-950">
+                                <span className="inline-flex items-center rounded-md bg-red-50 px-3 py-1.5 text-base font-bold tracking-wide text-red-700 ring-2 ring-red-300 shadow-sm">
                                   待收
                                 </span>
                               )}
