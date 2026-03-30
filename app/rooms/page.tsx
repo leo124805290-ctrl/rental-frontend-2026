@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -51,7 +51,25 @@ const statusLabel: Record<string, string> = {
   maintenance: '維修中',
 };
 
+function normalizeProperties(raw: Property[]): Property[] {
+  const seen = new Set<string>();
+  return (Array.isArray(raw) ? raw : [])
+    .filter((p) => p && (p as { status?: string }).status !== 'archived')
+    .map((p) => ({
+      ...p,
+      id: String((p as { id?: unknown }).id ?? '').trim(),
+      name: String((p as { name?: unknown }).name ?? '未命名物業').trim() || '未命名物業',
+    }))
+    .filter((p) => {
+      if (!p.id) return false;
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+}
+
 function RoomsPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
 
   const [properties, setProperties] = useState<Property[]>([]);
@@ -71,7 +89,7 @@ function RoomsPageInner() {
         api.get<RoomRow[]>('/api/rooms'),
         api.get<TenantMini[]>('/api/tenants'),
       ]);
-      setProperties(Array.isArray(plist) ? plist.filter((p) => p.status !== 'archived') : []);
+      setProperties(normalizeProperties(Array.isArray(plist) ? plist : []));
       setRooms(
         (Array.isArray(rlist) ? rlist : []).map((r) => ({
           ...r,
@@ -104,7 +122,8 @@ function RoomsPageInner() {
 
   /** URL ?propertyId= 須等物業列表載入後再套用，否則 Select value 無選項會造成 client exception */
   useEffect(() => {
-    const p = searchParams.get('propertyId');
+    const raw = searchParams.get('propertyId');
+    const p = raw?.trim() ?? '';
     if (!p) {
       setPropertyFilter('all');
       return;
@@ -116,6 +135,18 @@ function RoomsPageInner() {
       setPropertyFilter('all');
     }
   }, [searchParams, properties]);
+
+  const onPropertyFilterChange = useCallback(
+    (value: string) => {
+      setPropertyFilter(value);
+      if (value === 'all') {
+        router.replace('/rooms', { scroll: false });
+      } else {
+        router.replace(`/rooms?propertyId=${encodeURIComponent(value)}`, { scroll: false });
+      }
+    },
+    [router],
+  );
 
   const propName = useMemo(() => {
     const m = new Map<string, string>();
@@ -149,7 +180,7 @@ function RoomsPageInner() {
     <PageShell>
       <PageHeader
         title="房間管理"
-        description="檢視與篩選所有房間；新增／編輯房間與租客請至對應物業內操作。"
+        description="跨物業總覽：篩選與檢視所有房間。新增／編輯房間、辦入住請至「物業詳情」內操作。"
         actions={
           <Button type="button" variant="outline" onClick={() => void load()} disabled={loading}>
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -160,20 +191,22 @@ function RoomsPageInner() {
 
       <Card className="mb-4 border-dashed">
         <CardContent className="py-3 text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">物業管理</span>
-          僅維護房東合約與物業主檔；本頁集中檢視各房狀態。若要編輯單一房間或辦入住，請點「前往物業」。
+          <span className="font-medium text-foreground">與物業管理的分工</span>
+          「物業管理」維護合約與物業主檔；本頁為
+          <span className="font-medium text-foreground"> 跨物業房間總覽 </span>
+          。編輯單一房或租客請按「前往物業」進入該物業詳情。
         </CardContent>
       </Card>
 
       <Card className="mb-4">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">篩選</CardTitle>
-          <CardDescription>依物業縮小列表</CardDescription>
+          <CardDescription>依物業縮小列表（會與網址列 ?propertyId= 同步，可書籤／分享）</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">
           <div className="space-y-1">
             <span className="text-sm font-medium">物業</span>
-            <Select value={propertyFilter} onValueChange={setPropertyFilter}>
+            <Select value={propertyFilter} onValueChange={onPropertyFilterChange}>
               <SelectTrigger className="w-[240px]">
                 <SelectValue />
               </SelectTrigger>
