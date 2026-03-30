@@ -51,6 +51,27 @@ const statusLabel: Record<string, string> = {
   maintenance: '維修中',
 };
 
+const ROOM_STATUS_FILTERS = ['vacant', 'occupied', 'reserved', 'maintenance'] as const;
+
+function formatFloorDisplay(floor: number): string {
+  if (!Number.isFinite(floor)) return '—';
+  if (floor < 0) return `B${Math.abs(floor)}`;
+  return `${floor}F`;
+}
+
+function buildRoomsPath(parts: { property: string; floor: string; status: string }): string {
+  const q = new URLSearchParams();
+  if (parts.property !== 'all') q.set('propertyId', parts.property);
+  if (parts.floor !== 'all') q.set('floor', parts.floor);
+  if (parts.status !== 'all') q.set('status', parts.status);
+  const s = q.toString();
+  return s ? `/rooms?${s}` : '/rooms';
+}
+
+function isRoomStatusFilter(s: string): s is (typeof ROOM_STATUS_FILTERS)[number] {
+  return (ROOM_STATUS_FILTERS as readonly string[]).includes(s);
+}
+
 function normalizeProperties(raw: Property[]): Property[] {
   const seen = new Set<string>();
   return (Array.isArray(raw) ? raw : [])
@@ -75,8 +96,9 @@ function RoomsPageInner() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [rooms, setRooms] = useState<RoomRow[]>([]);
   const [tenants, setTenants] = useState<TenantMini[]>([]);
-  /** 必須永遠對應 Select 內存在的 value，避免 Radix 在選項未載入時拋錯 */
   const [propertyFilter, setPropertyFilter] = useState<string>('all');
+  const [floorFilter, setFloorFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -120,7 +142,7 @@ function RoomsPageInner() {
     void load();
   }, [load]);
 
-  /** URL ?propertyId= 須等物業列表載入後再套用，否則 Select value 無選項會造成 client exception */
+  /** URL：物業 id（須等列表載入後再套用，避免 Select 無選項） */
   useEffect(() => {
     const raw = searchParams.get('propertyId');
     const p = raw?.trim() ?? '';
@@ -136,16 +158,45 @@ function RoomsPageInner() {
     }
   }, [searchParams, properties]);
 
+  /** URL：樓層、狀態 */
+  useEffect(() => {
+    const fl = searchParams.get('floor');
+    const st = searchParams.get('status');
+    setFloorFilter(fl && fl !== '' && fl !== 'all' ? fl : 'all');
+    setStatusFilter(st && isRoomStatusFilter(st) ? st : 'all');
+  }, [searchParams]);
+
   const onPropertyFilterChange = useCallback(
     (value: string) => {
       setPropertyFilter(value);
-      if (value === 'all') {
-        router.replace('/rooms', { scroll: false });
-      } else {
-        router.replace(`/rooms?propertyId=${encodeURIComponent(value)}`, { scroll: false });
-      }
+      setFloorFilter('all');
+      router.replace(buildRoomsPath({ property: value, floor: 'all', status: statusFilter }), {
+        scroll: false,
+      });
     },
-    [router],
+    [router, statusFilter],
+  );
+
+  const onFloorFilterChange = useCallback(
+    (value: string) => {
+      setFloorFilter(value);
+      router.replace(
+        buildRoomsPath({ property: propertyFilter, floor: value, status: statusFilter }),
+        { scroll: false },
+      );
+    },
+    [router, propertyFilter, statusFilter],
+  );
+
+  const onStatusFilterChange = useCallback(
+    (value: string) => {
+      setStatusFilter(value);
+      router.replace(
+        buildRoomsPath({ property: propertyFilter, floor: floorFilter, status: value }),
+        { scroll: false },
+      );
+    },
+    [router, propertyFilter, floorFilter],
   );
 
   const propName = useMemo(() => {
@@ -162,25 +213,50 @@ function RoomsPageInner() {
     return m;
   }, [tenants]);
 
-  const filteredRooms = useMemo(() => {
+  const roomsScopedByProperty = useMemo(() => {
     if (propertyFilter === 'all') return rooms;
     return rooms.filter((r) => r.propertyId === propertyFilter);
   }, [rooms, propertyFilter]);
+
+  const floorOptions = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of roomsScopedByProperty) {
+      if (Number.isFinite(r.floor)) set.add(r.floor);
+    }
+    return [...set].sort((a, b) => a - b);
+  }, [roomsScopedByProperty]);
+
+  const filteredRooms = useMemo(() => {
+    let list = roomsScopedByProperty;
+    if (floorFilter !== 'all') {
+      const fn = Number(floorFilter);
+      list = list.filter((r) => Number.isFinite(r.floor) && r.floor === fn);
+    }
+    if (statusFilter !== 'all') {
+      list = list.filter((r) => r.status === statusFilter);
+    }
+    return list;
+  }, [roomsScopedByProperty, floorFilter, statusFilter]);
 
   const sortedRooms = useMemo(() => {
     return [...filteredRooms].sort((a, b) => {
       const na = propName.get(a.propertyId) ?? '';
       const nb = propName.get(b.propertyId) ?? '';
       if (na !== nb) return na.localeCompare(nb, 'zh-Hant');
+      const fa = Number.isFinite(a.floor) ? a.floor : 0;
+      const fb = Number.isFinite(b.floor) ? b.floor : 0;
+      if (fa !== fb) return fa - fb;
       return a.roomNumber.localeCompare(b.roomNumber, 'zh-Hant', { numeric: true });
     });
   }, [filteredRooms, propName]);
+
+  const showManyRoomsHint = propertyFilter === 'all' && properties.length > 1 && rooms.length > 0;
 
   return (
     <PageShell>
       <PageHeader
         title="房間管理"
-        description="跨物業總覽：篩選與檢視所有房間。新增／編輯房間、辦入住請至「物業詳情」內操作。"
+        description="處理入住／退租、合約與房間編輯：請先選物業，再依樓層或狀態篩選；細部操作請至「物業詳情」。物業主檔請至「物業管理」。"
         actions={
           <Button type="button" variant="outline" onClick={() => void load()} disabled={loading}>
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -192,29 +268,75 @@ function RoomsPageInner() {
       <Card className="mb-4 border-dashed">
         <CardContent className="py-3 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">與物業管理的分工</span>
-          「物業管理」維護合約與物業主檔；本頁為
-          <span className="font-medium text-foreground"> 跨物業房間總覽 </span>
-          。編輯單一房或租客請按「前往物業」進入該物業詳情。
+          「物業管理」僅維護名下物業主檔；本頁為
+          <span className="font-medium text-foreground"> 房間營運總覽 </span>
+          （可篩選物業、樓層、狀態）。若需編輯單一房、辦入住或合約，請按「前往物業詳情」。
         </CardContent>
       </Card>
+
+      {showManyRoomsHint && (
+        <Card className="mb-4 border-amber-200 bg-amber-50/80">
+          <CardContent className="py-3 text-sm text-amber-950">
+            列表跨多個物業時筆數可能較多，建議先選擇<strong>物業</strong>，再以<strong>樓層</strong>縮小範圍。
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="mb-4">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">篩選</CardTitle>
-          <CardDescription>依物業縮小列表（會與網址列 ?propertyId= 同步，可書籤／分享）</CardDescription>
+          <CardDescription>
+            物業、樓層、狀態會同步至網址列（可書籤／分享）；變更物業時會重置樓層篩選。
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">
           <div className="space-y-1">
             <span className="text-sm font-medium">物業</span>
             <Select value={propertyFilter} onValueChange={onPropertyFilterChange}>
               <SelectTrigger className="w-[240px]">
-                <SelectValue />
+                <SelectValue placeholder="選擇物業" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部物業</SelectItem>
                 {properties.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
                     {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <span className="text-sm font-medium">樓層</span>
+            <Select
+              value={floorFilter}
+              onValueChange={onFloorFilterChange}
+              disabled={!loading && floorOptions.length === 0}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="全部樓層" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部樓層</SelectItem>
+                {floorOptions.map((f) => (
+                  <SelectItem key={f} value={String(f)}>
+                    {formatFloorDisplay(f)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <span className="text-sm font-medium">房間狀態</span>
+            <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="全部狀態" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部狀態</SelectItem>
+                {ROOM_STATUS_FILTERS.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {statusLabel[k] ?? k}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -232,7 +354,7 @@ function RoomsPageInner() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">房間列表</CardTitle>
-          <CardDescription>共 {sortedRooms.length} 間</CardDescription>
+          <CardDescription>共 {sortedRooms.length} 間（已依物業、樓層、房號排序）</CardDescription>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {loading ? (
@@ -250,14 +372,14 @@ function RoomsPageInner() {
                   <TableHead>狀態</TableHead>
                   <TableHead className="text-right">月租</TableHead>
                   <TableHead>租客</TableHead>
-                  <TableHead className="w-[120px]">操作</TableHead>
+                  <TableHead className="w-[140px]">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {sortedRooms.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                      尚無房間資料
+                      尚無符合條件的房間，請調整篩選或確認物業內是否已建立房間。
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -269,7 +391,7 @@ function RoomsPageInner() {
                       <TableRow key={r.id}>
                         <TableCell className="font-medium">{propName.get(r.propertyId) ?? '—'}</TableCell>
                         <TableCell>{r.roomNumber}</TableCell>
-                        <TableCell className="text-right tabular-nums">{r.floor}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatFloorDisplay(r.floor)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="font-normal">
                             {st}
@@ -281,7 +403,7 @@ function RoomsPageInner() {
                         <TableCell>{r.status === 'occupied' ? name : '—'}</TableCell>
                         <TableCell>
                           <Button variant="secondary" size="sm" asChild>
-                            <Link href={`/properties/${r.propertyId}`}>前往物業</Link>
+                            <Link href={`/properties/${r.propertyId}`}>前往物業詳情</Link>
                           </Button>
                         </TableCell>
                       </TableRow>

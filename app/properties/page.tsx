@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Edit, Trash2, Building, MapPin, Phone, Calendar } from 'lucide-react';
+import Link from 'next/link';
+import { Plus, Edit, Trash2, Building, MapPin, Phone, Calendar, DoorOpen } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import PropertyForm, { type PropertyFormData, type PropertyFormSubmitData } from './components/property-form';
 import { api } from '@/lib/api-client';
@@ -57,7 +58,7 @@ export default function PropertiesPage() {
       ]);
       const stats: Record<string, { total: number; occ: number }> = {};
       for (const r of rooms) {
-        const pid = r.propertyId;
+        const pid = String(r.propertyId ?? '');
         if (!stats[pid]) stats[pid] = { total: 0, occ: 0 };
         stats[pid].total++;
         if (r.status === 'occupied') stats[pid].occ++;
@@ -168,7 +169,7 @@ export default function PropertiesPage() {
       <PageShell>
         <PageHeader
           title="物業管理"
-          description="管理您的租屋物業資訊"
+          description="僅管理物業主檔：檢視名下物業、新增或編輯。入住、房間與合約請至側欄「房間管理」。"
           actions={
             <Button disabled>
               <Plus className="mr-2 h-4 w-4" />
@@ -202,7 +203,7 @@ export default function PropertiesPage() {
       <PageShell>
         <PageHeader
           title="物業管理"
-          description="管理您的租屋物業資訊"
+          description="僅管理物業主檔：檢視名下物業、新增或編輯。入住、房間與合約請至側欄「房間管理」。"
           actions={<Button onClick={loadProperties}>重新載入</Button>}
         />
         <Card className="border-red-200 bg-red-50">
@@ -227,7 +228,7 @@ export default function PropertiesPage() {
     <PageShell>
       <PageHeader
         title="物業管理"
-        description="管理您的租屋物業資訊"
+        description="僅管理物業主檔：檢視名下物業、新增或編輯。入住、房間與合約請至側欄「房間管理」。"
         actions={
           <Button type="button" onClick={handleAddProperty}>
             <Plus className="mr-2 h-4 w-4" />
@@ -320,27 +321,35 @@ export default function PropertiesPage() {
                   </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-2 pt-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 sm:flex-1"
-                    onClick={() => handleEditProperty(property)}
-                  >
-                    <Edit className="h-4 w-4 mr-2" />
-                    編輯
+                <div className="flex flex-col gap-2 pt-4">
+                  <Button type="button" size="sm" className="w-full" asChild>
+                    <Link href={`/rooms?propertyId=${encodeURIComponent(String(property.id))}`}>
+                      <DoorOpen className="h-4 w-4 mr-2" />
+                      管理房間
+                    </Link>
                   </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="sm:flex-1 text-red-700 border-red-200 hover:bg-red-50"
-                    onClick={() => handleDeleteProperty(property)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    刪除
-                  </Button>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => handleEditProperty(property)}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      編輯物業
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-red-700 border-red-200 hover:bg-red-50"
+                      onClick={() => handleDeleteProperty(property)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      刪除
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
