@@ -27,8 +27,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref
   ) => {
-    const Comp = asChild ? Slot : 'button';
-    
     const baseStyles = 'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
     
     const variantStyles = {
@@ -50,8 +48,28 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const loadingStyles = isLoading ? 'relative !text-transparent' : '';
     const disabledStyles = disabled || isLoading ? 'cursor-not-allowed' : '';
 
+    // Radix Slot（asChild）只能有單一 React 元素子節點，否則 React.Children.only 會拋錯
+    if (asChild) {
+      return (
+        <Slot
+          className={cn(
+            baseStyles,
+            variantStyles[variant],
+            sizeStyles[size],
+            loadingStyles,
+            disabledStyles,
+            className
+          )}
+          ref={ref}
+          {...props}
+        >
+          {children}
+        </Slot>
+      );
+    }
+
     return (
-      <Comp
+      <button
         className={cn(
           baseStyles,
           variantStyles[variant],
@@ -69,11 +87,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
           </div>
         )}
-        
+
         {!isLoading && leftIcon && <span className="mr-2">{leftIcon}</span>}
         <span className={cn(isLoading && 'opacity-0')}>{children}</span>
         {!isLoading && rightIcon && <span className="ml-2">{rightIcon}</span>}
-      </Comp>
+      </button>
     );
   }
 );
