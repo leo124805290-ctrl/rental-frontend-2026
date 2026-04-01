@@ -538,7 +538,7 @@ function RoomsPageInner() {
       return (
         <div className={wrap}>
           <Button type="button" variant="outline" size="sm" asChild>
-            <Link href="/checkout">退租</Link>
+            <Link href={`/checkout?roomId=${encodeURIComponent(r.id)}`}>退租</Link>
           </Button>
           <Button type="button" variant="outline" size="sm" onClick={() => openViewContract(r)}>
             <FileText className="h-3.5 w-3.5 mr-1" />

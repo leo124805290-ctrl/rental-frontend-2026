@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useEffect, useState } from 'react';
+import { Suspense, useMemo, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { Home, Users, CheckCircle, History, Calculator } from 'lucide-react';
+import { AlertTriangle, Home, Users, CheckCircle, History, Calculator } from 'lucide-react';
 import { formatCents, formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
@@ -54,6 +55,51 @@ interface DepositApiRow {
   description?: string | null;
 }
 
+/** 與收款明細 /api/payments 帳單列一致（金額為分） */
+interface PaymentLineApi {
+  id: string;
+  roomId?: string;
+  tenantId?: string | null;
+  lineType?: string;
+  paymentMonth?: string;
+  totalAmount?: number;
+  paidAmount?: number;
+  /** 若有則帶入；未回傳可省略 */
+  paymentStatus?: string | undefined;
+}
+
+function lineTypeLabel(lineType: string | undefined): string {
+  switch (lineType) {
+    case 'deposit':
+      return '押金';
+    case 'rent':
+      return '租金';
+    case 'electricity':
+      return '電費';
+    default:
+      return lineType || '帳單';
+  }
+}
+
+function restLineCents(p: PaymentLineApi): number {
+  const t = Number(p.totalAmount ?? 0);
+  const paid = Number(p.paidAmount ?? 0);
+  return Math.max(0, t - paid);
+}
+
+function normalizePaymentLine(raw: Record<string, unknown>): PaymentLineApi {
+  const ps = raw['paymentStatus'] ?? raw['payment_status'];
+  const base: PaymentLineApi = {
+    id: String(raw['id'] ?? ''),
+    lineType: String(raw['lineType'] ?? raw['line_type'] ?? ''),
+    paymentMonth: String(raw['paymentMonth'] ?? raw['payment_month'] ?? ''),
+    totalAmount: Number(raw['totalAmount'] ?? raw['total_amount'] ?? 0),
+    paidAmount: Number(raw['paidAmount'] ?? raw['paid_amount'] ?? 0),
+  };
+  if (ps != null) base.paymentStatus = String(ps);
+  return base;
+}
+
 function localTodayYmd(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -82,7 +128,8 @@ interface CheckoutSettlementRow {
   createdAt?: string;
 }
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
+  const searchParams = useSearchParams();
   const [tenants, setTenants] = useState<TenantApi[]>([]);
   const [rooms, setRooms] = useState<Record<string, RoomApi>>({});
   const [properties, setProperties] = useState<Record<string, PropertyApi>>({});
@@ -101,6 +148,7 @@ export default function CheckoutPage() {
   const [tenantDeposits, setTenantDeposits] = useState<DepositApiRow[]>([]);
   const [prepaidSumCents, setPrepaidSumCents] = useState<number | null>(null);
   const [financialLoading, setFinancialLoading] = useState(false);
+  const [paymentLines, setPaymentLines] = useState<PaymentLineApi[]>([]);
 
   // 載入租客 / 房間 / 物業
   useEffect(() => {
@@ -110,6 +158,7 @@ export default function CheckoutPage() {
   const loadData = async () => {
     setIsLoading(true);
     setError(null);
+    setSelectedTenantId('');
 
     try {
       const [tenantList, roomList, propertyList, settList] = await Promise.all([
@@ -171,8 +220,6 @@ export default function CheckoutPage() {
       setTenants(normalizedTenants);
       setRooms(roomsMap);
       setProperties(propsMap);
-
-      setSelectedTenantId('');
     } catch (error) {
       setError('載入資料失敗');
       console.error('載入錯誤:', error);
@@ -185,6 +232,24 @@ export default function CheckoutPage() {
     () => tenants.filter((t) => t.status !== 'checked_out'),
     [tenants],
   );
+
+  /** 從房間管理／物業詳情 ?roomId= 或 ?tenantId= 帶入租客 */
+  useEffect(() => {
+    if (isLoading) return;
+    const roomId = searchParams.get('roomId')?.trim();
+    const tenantIdParam = searchParams.get('tenantId')?.trim();
+    if (tenantIdParam) {
+      const t = activeTenants.find((x) => x.id === tenantIdParam);
+      if (t) {
+        setSelectedTenantId(tenantIdParam);
+        return;
+      }
+    }
+    if (roomId) {
+      const t = activeTenants.find((x) => x.roomId === roomId);
+      if (t) setSelectedTenantId(t.id);
+    }
+  }, [isLoading, searchParams, activeTenants]);
 
   const tenantById = useMemo(() => {
     const m = new Map<string, TenantApi>();
@@ -231,6 +296,7 @@ export default function CheckoutPage() {
     if (!selectedTenantId || !selectedTenant?.roomId) {
       setTenantDeposits([]);
       setPrepaidSumCents(null);
+      setPaymentLines([]);
       return;
     }
     let cancelled = false;
@@ -241,21 +307,23 @@ export default function CheckoutPage() {
           api.get<DepositApiRow[]>(
             `/api/deposits?tenantId=${encodeURIComponent(selectedTenantId)}`,
           ),
-          api.get<Array<{ paidAmount?: number }>>(
+          api.get<PaymentLineApi[]>(
             `/api/payments?tenantId=${encodeURIComponent(selectedTenantId)}&roomId=${encodeURIComponent(selectedTenant.roomId)}`,
           ),
         ]);
         if (cancelled) return;
         setTenantDeposits(Array.isArray(depList) ? depList : []);
-        const sum = (Array.isArray(payList) ? payList : []).reduce(
-          (s, p) => s + Number(p.paidAmount ?? 0),
-          0,
+        const rows = (Array.isArray(payList) ? payList : []).map((r) =>
+          normalizePaymentLine(r as unknown as Record<string, unknown>),
         );
+        setPaymentLines(rows);
+        const sum = rows.reduce((s, p) => s + Number(p.paidAmount ?? 0), 0);
         setPrepaidSumCents(sum);
       } catch {
         if (!cancelled) {
           setTenantDeposits([]);
           setPrepaidSumCents(null);
+          setPaymentLines([]);
         }
       } finally {
         if (!cancelled) setFinancialLoading(false);
@@ -277,6 +345,13 @@ export default function CheckoutPage() {
       refundedCents: sumType('退還'),
     };
   }, [tenantDeposits]);
+
+  /** 尚未繳清之帳單列（應收 − 已收 > 0） */
+  const unpaidBreakdown = useMemo(() => {
+    const lines = paymentLines.filter((p) => restLineCents(p) > 0);
+    const total = lines.reduce((s, p) => s + restLineCents(p), 0);
+    return { lines, total };
+  }, [paymentLines]);
 
   const meterPreview = useMemo(() => {
     const prev = lastReading ?? 0;
@@ -313,6 +388,10 @@ export default function CheckoutPage() {
     if (Number.isNaN(finalVal) || finalVal < 0) {
       alert('請輸入有效非負電表度數');
       return;
+    }
+    if (unpaidBreakdown.total > 0) {
+      const msg = `尚有未繳清費用共 ${formatCents(unpaidBreakdown.total)}（收款明細中仍為「待收」之帳單）。建議先至「收款明細」完成收款再退租。\n\n仍要繼續開啟退租確認？`;
+      if (!confirm(msg)) return;
     }
     setShowSettlementDialog(true);
   };
@@ -376,7 +455,7 @@ export default function CheckoutPage() {
       <div className="flex flex-col space-y-6">
         <PageHeader
           title="退租結算管理"
-          description="處理租客退租：必填退租電表度數、可填其他扣款；送出後寫入結算單並清空房間"
+          description="處理租客退租：必填退租電表度數、可填其他扣款；送出後寫入結算單並清空房間。從房間管理帶入時會自動選定該房租客。"
           actions={
             <Button variant="outline" onClick={() => void loadData()}>
               <History className="mr-2 h-4 w-4" />
@@ -384,6 +463,30 @@ export default function CheckoutPage() {
             </Button>
           }
         />
+
+        {selectedTenant && selectedRoom && unpaidBreakdown.total > 0 && (
+          <Card className="border-amber-300 bg-amber-50">
+            <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-start">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-700" aria-hidden />
+              <div className="min-w-0 flex-1 space-y-2 text-sm text-amber-950">
+                <p className="font-semibold">
+                  尚有未繳清費用共 {formatCents(unpaidBreakdown.total)}，請確認是否已收款
+                </p>
+                <ul className="list-inside list-disc space-y-1">
+                  {unpaidBreakdown.lines.map((p) => (
+                    <li key={p.id}>
+                      {lineTypeLabel(p.lineType)}（{p.paymentMonth ?? '—'}）待收{' '}
+                      {formatCents(restLineCents(p))}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-amber-900/90">
+                  建議先至「收款明細」完成待收款項，再辦理退租，以免漏收。
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-3">
           {/* 左側：退租結算表單 */}
@@ -701,6 +804,11 @@ export default function CheckoutPage() {
                 </div>
               </div>
             )}
+            {unpaidBreakdown.total > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                提醒：仍有待收 {formatCents(unpaidBreakdown.total)}，請確認可接受後再送出。
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSettlementDialog(false)}>
@@ -713,5 +821,29 @@ export default function CheckoutPage() {
         </DialogContent>
       </Dialog>
     </PageShell>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageShell>
+          <Card>
+            <CardHeader>
+              <CardTitle>退租結算管理</CardTitle>
+              <CardDescription>載入中…</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                正在載入
+              </div>
+            </CardContent>
+          </Card>
+        </PageShell>
+      }
+    >
+      <CheckoutPageContent />
+    </Suspense>
   );
 }

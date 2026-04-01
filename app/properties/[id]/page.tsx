@@ -851,7 +851,7 @@ export default function PropertyDetailPage() {
 
                     {room.status === 'occupied' && (
                       <div className="flex flex-wrap gap-2">
-                        <Link href="/checkout">
+                        <Link href={`/checkout?roomId=${encodeURIComponent(room.id)}`}>
                           <Button type="button" variant="outline" size="sm">
                             辦理退租
                           </Button>
