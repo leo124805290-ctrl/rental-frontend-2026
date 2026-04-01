@@ -178,7 +178,17 @@ async function request<T = any>(
 
     // 檢查回應格式
     const apiResponse = data as ApiResponse<T>;
-    
+
+    if (!response.ok && response.status === 401 && !endpoint.includes('/api/auth/login')) {
+      removeAuthToken();
+      if (typeof window !== 'undefined') {
+        const p = window.location.pathname || '';
+        if (!p.startsWith('/login')) {
+          window.location.replace('/login');
+        }
+      }
+    }
+
     if (!apiResponse.success) {
       throw new ApiError(
         apiResponse.message || 'API 請求失敗',
