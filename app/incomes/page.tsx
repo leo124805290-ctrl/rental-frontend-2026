@@ -14,6 +14,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { filterOperableProperties } from '@/lib/property-status';
 
 // 補充收入資料類型（與後端 ExtraIncome 類型對應）
 interface ExtraIncome {
@@ -26,6 +27,12 @@ interface ExtraIncome {
   description: string | null;
   createdAt: string;
   deletedAt: string | null;
+}
+
+interface PropertyOption {
+  id: string;
+  name: string;
+  status?: string;
 }
 
 // 新增收入表單資料
@@ -55,13 +62,13 @@ export default function IncomesPage() {
   const [selectedType, setSelectedType] = useState<string>('all');
   const [dateRange, setDateRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
 
-  const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
+  const [properties, setProperties] = useState<PropertyOption[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const p = await api.get<Array<{ id: string; name: string }>>('/api/properties');
-        setProperties(p);
+        const p = await api.get<PropertyOption[]>('/api/properties');
+        setProperties(filterOperableProperties(Array.isArray(p) ? p : []));
       } catch {
         setProperties([]);
       }

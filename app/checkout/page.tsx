@@ -16,6 +16,7 @@ import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { filterOperableProperties, type PropertyStatusLike } from '@/lib/property-status';
 
 interface TenantApi {
   id: string;
@@ -46,6 +47,7 @@ interface RoomApi {
 interface PropertyApi {
   id: string;
   name: string;
+  status?: string;
 }
 
 interface DepositApiRow {
@@ -197,25 +199,40 @@ function CheckoutPageContent() {
         };
       }
 
+      const operablePropertyIds = new Set(
+        filterOperableProperties(
+          propertyList.map((p) => ({
+            status: (p as PropertyStatusLike).status,
+            id: String(p.id ?? ''),
+          })),
+        ).map((p) => p.id),
+      );
+
       const propsMap: Record<string, PropertyApi> = {};
       for (const p of propertyList) {
-        propsMap[String(p.id)] = { id: String(p.id), name: String(p.name || '') };
+        propsMap[String(p.id)] = {
+          id: String(p.id),
+          name: String(p.name || ''),
+          ...(p.status != null ? { status: String(p.status) } : {}),
+        };
       }
 
-      const normalizedTenants: TenantApi[] = tenantList.map((t) => ({
-        id: String(t.id),
-        roomId: String(t.roomId ?? t.room_id ?? ''),
-        propertyId: String(t.propertyId ?? t.property_id ?? ''),
-        nameZh: t.nameZh != null ? String(t.nameZh) : (t.name != null ? String(t.name) : ''),
-        nameVi: t.nameVi != null ? String(t.nameVi) : '',
-        phone: t.phone != null ? String(t.phone) : '',
-        checkInDate: String(t.checkInDate ?? t.contract_start ?? t.createdAt ?? new Date().toISOString()),
-        ...(t.expectedCheckoutDate
-          ? { expectedCheckoutDate: String(t.expectedCheckoutDate) }
-          : {}),
-        status: String(t.status ?? (t.is_active === false ? 'checked_out' : 'active')),
-        ...(t.createdAt ? { createdAt: String(t.createdAt) } : {}),
-      }));
+      const normalizedTenants: TenantApi[] = tenantList
+        .map((t) => ({
+          id: String(t.id),
+          roomId: String(t.roomId ?? t.room_id ?? ''),
+          propertyId: String(t.propertyId ?? t.property_id ?? ''),
+          nameZh: t.nameZh != null ? String(t.nameZh) : (t.name != null ? String(t.name) : ''),
+          nameVi: t.nameVi != null ? String(t.nameVi) : '',
+          phone: t.phone != null ? String(t.phone) : '',
+          checkInDate: String(t.checkInDate ?? t.contract_start ?? t.createdAt ?? new Date().toISOString()),
+          ...(t.expectedCheckoutDate
+            ? { expectedCheckoutDate: String(t.expectedCheckoutDate) }
+            : {}),
+          status: String(t.status ?? (t.is_active === false ? 'checked_out' : 'active')),
+          ...(t.createdAt ? { createdAt: String(t.createdAt) } : {}),
+        }))
+        .filter((tenant) => operablePropertyIds.has(tenant.propertyId));
 
       setTenants(normalizedTenants);
       setRooms(roomsMap);

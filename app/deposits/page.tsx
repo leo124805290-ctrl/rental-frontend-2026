@@ -16,6 +16,7 @@ import { formatCents, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { sortPropertiesForHistory } from '@/lib/property-status';
 
 interface DepositRow {
   id: string;
@@ -37,6 +38,7 @@ interface RoomOpt {
 interface PropertyOpt {
   id: string;
   name: string;
+  status?: string;
 }
 
 interface DepositPaymentLine {
@@ -84,7 +86,7 @@ export default function DepositsPage() {
       api.get<RoomOpt[]>('/api/rooms'),
       api.get<Array<Record<string, unknown>>>('/api/payments').catch(() => []),
     ]);
-    setProperties(Array.isArray(plist) ? plist : []);
+    setProperties(sortPropertiesForHistory(Array.isArray(plist) ? plist : []));
     setRooms(Array.isArray(rlist) ? rlist : []);
     const raw = Array.isArray(pays) ? pays : [];
     setDepositPayments(

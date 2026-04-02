@@ -17,6 +17,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageShell } from '@/components/app-shell/page-shell';
 import { PageHeader } from '@/components/app-shell/page-header';
+import {
+  getPropertyStatusBadgeLabel,
+  isArchivedProperty,
+  isDemoProperty,
+  isOperableProperty,
+  propertyStatusBadgeClassName,
+} from '@/lib/property-status';
 
 // 模擬物業資料類型
 interface Property {
@@ -129,6 +136,9 @@ export default function PropertyDetailPage() {
   const [viewContractHtml, setViewContractHtml] = useState('');
   const [viewContractSig, setViewContractSig] = useState<string | null>(null);
 
+  const isArchived = isArchivedProperty(property?.status);
+  const canOperateProperty = isOperableProperty(property?.status);
+
   const loadPropertyAndRooms = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -201,6 +211,10 @@ export default function PropertyDetailPage() {
   };
 
   const handleAddRoom = () => {
+    if (!canOperateProperty) {
+      alert('已封存物業不可新增房間。若需恢復營運，請先恢復使用中。');
+      return;
+    }
     setEditingRoom(null);
     setRoomFormData({
       roomNumber: '',
@@ -213,6 +227,10 @@ export default function PropertyDetailPage() {
   };
 
   const handleEditRoom = (room: Room) => {
+    if (!canOperateProperty) {
+      alert('已封存物業不可編輯房間。若需恢復營運，請先恢復使用中。');
+      return;
+    }
     setEditingRoom(room);
     setRoomFormData({
       roomNumber: room.roomNumber,
@@ -225,6 +243,10 @@ export default function PropertyDetailPage() {
   };
 
   const handleDeleteRoom = async (room: Room) => {
+    if (!canOperateProperty) {
+      alert('已封存物業不可刪除房間。若需恢復營運，請先恢復使用中。');
+      return;
+    }
     if (confirm(`確定要刪除房間 ${room.roomNumber} 嗎？`)) {
       try {
         await api.delete(`/api/rooms/${room.id}`);
@@ -244,6 +266,10 @@ export default function PropertyDetailPage() {
   };
 
   const openCheckinModal = (room: Room) => {
+    if (!canOperateProperty) {
+      alert('已封存物業不可安排入住。若需恢復營運，請先恢復使用中。');
+      return;
+    }
     setCheckinRoom(room);
     const today = new Date().toISOString().split('T')[0] ?? '';
     setCheckinForm({
@@ -469,42 +495,6 @@ export default function PropertyDetailPage() {
     );
   }
 
-  const propertyStatus = property.status || 'active';
-  if (propertyStatus === 'archived') {
-    return (
-      <PageShell>
-        <PageHeader
-          title={property.name}
-          description="此物業已封存，只保留紀錄（不支援新增/編輯房間）。"
-          actions={
-            <Button onClick={handleRestoreProperty} variant="outline" size="sm">
-              <RotateCcw className="h-4 w-4 mr-2" />
-              恢復使用中
-            </Button>
-          }
-        />
-
-        <Card className="border-amber-200 bg-amber-50">
-          <CardContent className="pt-6">
-            <div className="text-amber-900 font-medium">
-              已封存物業
-            </div>
-            <p className="text-amber-800 text-sm mt-2">
-              這個物業目前不在可操作清單中。若你需要繼續使用，請先按下「恢復使用中」。
-            </p>
-            <div className="mt-6">
-              <Link href="/properties">
-                <Button variant="outline" size="sm">
-                  返回物業列表
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      </PageShell>
-    );
-  }
-
   // 計算房間統計
   const roomStats = {
     total: rooms.length,
@@ -552,18 +542,26 @@ export default function PropertyDetailPage() {
         description={`總 ${roomStats.total} 間｜已入住 ${roomStats.occupied}｜空房 ${roomStats.vacant}｜維修 ${roomStats.maintenance}｜入住率 ${occupancyRate}%｜月租金收入 $${monthlyRentIncome.toLocaleString('zh-TW')}。亦可在側邊欄「房間管理」檢視全部房間。`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Link href={`/rooms?propertyId=${encodeURIComponent(property.id)}`}>
-              <Button variant="secondary" size="sm">
-                房間總表
-              </Button>
-            </Link>
+            {canOperateProperty ? (
+              <Link href={`/rooms?propertyId=${encodeURIComponent(property.id)}`}>
+                <Button variant="secondary" size="sm">
+                  房間總表
+                </Button>
+              </Link>
+            ) : null}
             <Link href="/properties">
               <Button variant="outline" size="sm">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 返回物業列表
               </Button>
             </Link>
-            {(property.status || 'active') === 'demo' && (
+            {isArchived ? (
+              <Button onClick={handleRestoreProperty} variant="outline" size="sm">
+                <RotateCcw className="h-4 w-4 mr-2" />
+                恢復使用中
+              </Button>
+            ) : null}
+            {isDemoProperty(property.status) ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -573,20 +571,44 @@ export default function PropertyDetailPage() {
                 <Trash2 className="h-4 w-4 mr-2" />
                 刪除
               </Button>
-            )}
+            ) : null}
           </div>
         }
       />
+
+      {isArchived ? (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="flex flex-col gap-3 pt-6 text-sm text-amber-950">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className={propertyStatusBadgeClassName(property.status)}>
+                {getPropertyStatusBadgeLabel(property.status)}
+              </Badge>
+              <span className="font-medium">此物業已封存</span>
+            </div>
+            <p>
+              你仍可查看歷史資料與主檔資訊；若需重新營運，請先按上方「恢復使用中」。
+            </p>
+            <p>
+              封存期間不可新增房間、安排入住、刪除房間或從本頁進行其他營運操作。
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         {/* 左側：物業資訊 */}
         <div className="lg:col-span-1">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center">
-                <Building className="h-5 w-5 mr-2 text-gray-500" />
-                物業資訊
-              </CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="flex items-center">
+                  <Building className="h-5 w-5 mr-2 text-gray-500" />
+                  物業資訊
+                </CardTitle>
+                <Badge variant="outline" className={propertyStatusBadgeClassName(property.status)}>
+                  {getPropertyStatusBadgeLabel(property.status)}
+                </Badge>
+              </div>
               <CardDescription>基本資訊與合約</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -717,10 +739,17 @@ export default function PropertyDetailPage() {
               <p className="text-sm text-muted-foreground">管理此物業的所有房間</p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
-              <Button onClick={handleAddRoom}>
-                <Plus className="h-4 w-4 mr-2" />
-                新增房間
-              </Button>
+              {canOperateProperty ? (
+                <Button onClick={handleAddRoom}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  新增房間
+                </Button>
+              ) : (
+                <Button type="button" variant="outline" disabled>
+                  <Plus className="h-4 w-4 mr-2" />
+                  已封存，無法新增房間
+                </Button>
+              )}
             </div>
           </div>
 
@@ -817,7 +846,7 @@ export default function PropertyDetailPage() {
                       )}
                     </div>
 
-                    {room.status === 'vacant' && (
+                  {room.status === 'vacant' && canOperateProperty && (
                       <div className="flex flex-wrap gap-2">
                         <Button
                           type="button"
@@ -849,7 +878,7 @@ export default function PropertyDetailPage() {
                       </div>
                     )}
 
-                    {room.status === 'occupied' && (
+                  {room.status === 'occupied' && canOperateProperty && (
                       <div className="flex flex-wrap gap-2">
                         <Link href={`/checkout?roomId=${encodeURIComponent(room.id)}`}>
                           <Button type="button" variant="outline" size="sm">
@@ -875,7 +904,7 @@ export default function PropertyDetailPage() {
                       </div>
                     )}
 
-                    {room.status !== 'vacant' && room.status !== 'occupied' && (
+                  {room.status !== 'vacant' && room.status !== 'occupied' && canOperateProperty && (
                       <div className="flex flex-wrap gap-2">
                         <Button
                           type="button"
@@ -898,6 +927,11 @@ export default function PropertyDetailPage() {
                         </Button>
                       </div>
                     )}
+                  {!canOperateProperty ? (
+                    <div className="rounded-md border border-dashed border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900">
+                      已封存物業：本房間僅供歷史檢視，營運操作已停用。
+                    </div>
+                  ) : null}
                   </CardContent>
                 </Card>
               ))}

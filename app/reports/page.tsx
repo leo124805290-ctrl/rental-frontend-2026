@@ -14,6 +14,7 @@ import { formatCurrency, formatCents } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { propertyStatusLabel } from '@/lib/property-status';
 
 // 損益報表資料類型
 interface MonthlyReport {
@@ -70,6 +71,7 @@ interface SummaryReport {
 interface Property {
   id: string;
   name: string;
+  status?: string;
 }
 
 /** 電費帳單列（僅 lineType=electricity） */
@@ -101,7 +103,9 @@ export default function ReportsPage() {
   useEffect(() => {
     (async () => {
       try {
-        const list = await api.get<Array<{ id: string; name: string }>>('/api/properties');
+        const list = await api.get<Array<{ id: string; name: string; status?: string }>>(
+          '/api/properties?include_archived=true',
+        );
         setProperties(list);
         setSelectedProperty((prev) => prev || list[0]?.id || '');
       } catch {
@@ -239,7 +243,7 @@ export default function ReportsPage() {
     <PageShell>
       <PageHeader
         title="損益報表"
-        description="分析物業收入、支出與淨利，掌握營運狀況"
+        description="分析物業收入、支出與淨利，掌握營運狀況。封存物業可查看歷史報表，但不可作為營運操作入口。"
         actions={
           <Button onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />
@@ -281,7 +285,7 @@ export default function ReportsPage() {
                       <SelectItem value="__none__">請選擇物業</SelectItem>
                       {properties.map(property => (
                         <SelectItem key={property.id} value={property.id}>
-                          {property.name}
+                          {property.name}（{propertyStatusLabel(property.status)}）
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -14,9 +14,13 @@ import { formatCents, formatCurrency, formatDate } from '@/lib/utils';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 import { api } from '@/lib/api-client';
+import {
+  filterOperableProperties,
+} from '@/lib/property-status';
 
 interface RoomMeter {
   id: string;
+  propertyId: string;
   roomNumber: string;
   propertyName: string;
   electricityRate: number; // 每度電單價（分）
@@ -33,9 +37,9 @@ export default function MeterReadingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<string>('all');
-  const [allowedPropertyNames, setAllowedPropertyNames] = useState<Set<string>>(
-    new Set(),
-  );
+  const [operableProperties, setOperableProperties] = useState<
+    Array<{ id: string; name: string; status?: string }>
+  >([]);
   const [readingDate, setReadingDate] = useState<string>(
     new Date().toISOString().split('T')[0] ?? ''
   );
@@ -53,7 +57,7 @@ export default function MeterReadingsPage() {
 
     try {
       const [properties, roomList] = await Promise.all([
-        api.get<Array<{ id: string; name: string }>>('/api/properties'),
+        api.get<Array<{ id: string; name: string; status?: string }>>('/api/properties'),
         api.get<
           Array<{
             id: string;
@@ -65,11 +69,17 @@ export default function MeterReadingsPage() {
         >('/api/rooms'),
       ]);
 
-      setAllowedPropertyNames(new Set(properties.map((p) => String(p.name))));
-      const nameById = new Map(properties.map((p) => [p.id, p.name] as const));
+      const allowed = filterOperableProperties(
+        Array.isArray(properties) ? properties : [],
+      ) as Array<{ id: string; name: string; status?: string }>;
+      setOperableProperties(allowed);
+      const allowedIds = new Set(allowed.map((p) => String(p.id)));
+      const nameById = new Map(allowed.map((p) => [p.id, p.name] as const));
 
       const withReadings = await Promise.all(
-        roomList.map(async (room) => {
+        roomList
+          .filter((room) => allowedIds.has(String(room.propertyId)))
+          .map(async (room) => {
           try {
             const list = await api.get<
               Array<{ readingValue: number; readingDate: string }>
@@ -90,6 +100,7 @@ export default function MeterReadingsPage() {
           : new Date().toISOString().split('T')[0] ?? '';
         return {
           id: room.id,
+          propertyId: room.propertyId,
           roomNumber: room.roomNumber,
           propertyName,
           electricityRate: room.electricityRate,
@@ -114,11 +125,7 @@ export default function MeterReadingsPage() {
 
   // 篩選後的房間
   const filteredRooms = rooms.filter(room => {
-    // archived 物業房間不應出現在可操作列表
-    if (allowedPropertyNames.size > 0 && !allowedPropertyNames.has(room.propertyName)) {
-      return false;
-    }
-    if (selectedProperty !== 'all' && room.propertyName !== selectedProperty) return false;
+    if (selectedProperty !== 'all' && room.propertyId !== selectedProperty) return false;
     return true;
   });
 
@@ -272,13 +279,9 @@ export default function MeterReadingsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">所有物業</SelectItem>
-                    {Array.from(
-                      allowedPropertyNames.size > 0
-                        ? allowedPropertyNames
-                        : new Set(rooms.map((r) => r.propertyName)),
-                    ).map((name) => (
-                      <SelectItem key={name} value={name}>
-                        {name}
+                    {operableProperties.map((property) => (
+                      <SelectItem key={property.id} value={property.id}>
+                        {property.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

@@ -14,6 +14,13 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import {
+  filterOperableProperties,
+  getPropertyStatusBadgeLabel,
+  isOperablePropertyStatus,
+  propertyStatusBadgeClassName,
+  type PropertyStatusLike,
+} from '@/lib/property-status';
 
 // 維修紀錄資料類型（與後端 Maintenance 類型對應）
 interface MaintenanceRecord {
@@ -51,6 +58,11 @@ interface MaintenanceFormData {
   assignedTo: string | null;
 }
 
+interface PropertyOption extends PropertyStatusLike {
+  id: string;
+  name: string;
+}
+
 export default function MaintenancePage() {
   const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,7 +85,7 @@ export default function MaintenancePage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
 
-  const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
+  const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [rooms, setRooms] = useState<{ id: string; number: string; propertyId: string }[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
 
@@ -81,11 +93,11 @@ export default function MaintenancePage() {
     (async () => {
       try {
         const [p, r, u] = await Promise.all([
-          api.get<Array<{ id: string; name: string }>>('/api/properties'),
+          api.get<Array<{ id: string; name: string; status?: string }>>('/api/properties?include_archived=true'),
           api.get<Array<{ id: string; roomNumber: string; propertyId: string }>>('/api/rooms'),
           api.get<Array<{ id: string; email: string; fullName: string | null }>>('/api/users'),
         ]);
-        setProperties(p);
+        setProperties(filterOperableProperties(Array.isArray(p) ? p : []));
         setRooms(
           r.map((room) => ({
             id: room.id,
@@ -136,6 +148,9 @@ export default function MaintenancePage() {
     }
   };
 
+  const selectedPropertyMeta = properties.find((property) => property.id === formData.propertyId) ?? null;
+  const canWriteMaintenance = !!selectedPropertyMeta && isOperablePropertyStatus(selectedPropertyMeta.status);
+
   // 篩選後的維修紀錄
   const filteredRecords = maintenanceRecords.filter(record => {
     if (selectedProperty !== 'all' && record.propertyId !== selectedProperty) return false;
@@ -155,9 +170,13 @@ export default function MaintenancePage() {
 
   // 新增維修紀錄
   const handleAddMaintenance = () => {
+    if (properties.length === 0) {
+      alert('目前沒有可操作物業；封存物業僅可查看歷史，不可新增維修。');
+      return;
+    }
     setEditingRecord(null);
     setFormData({
-      propertyId: '',
+      propertyId: properties[0]?.id ?? '',
       roomId: null,
       title: '',
       description: '',
@@ -220,6 +239,10 @@ export default function MaintenancePage() {
     // 驗證
     if (!formData.propertyId || !formData.title) {
       alert('請填寫必填欄位（物業、標題）');
+      return;
+    }
+    if (!canWriteMaintenance) {
+      alert('封存物業僅可查看歷史，不可新增或修改維修。');
       return;
     }
 
@@ -296,7 +319,7 @@ export default function MaintenancePage() {
         description="管理物業維修需求、追蹤處理進度、記錄維修成本"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={handleAddMaintenance}>
+            <Button onClick={handleAddMaintenance} disabled={properties.length === 0}>
               <PlusCircle className="mr-2 h-4 w-4" />
               新增維修
             </Button>
@@ -307,6 +330,12 @@ export default function MaintenancePage() {
           </div>
         }
       />
+
+      <Card className="mb-4 border-dashed">
+        <CardContent className="py-3 text-sm text-muted-foreground">
+          封存物業僅保留歷史維修紀錄，不可新增、更新或推進維修處理流程。
+        </CardContent>
+      </Card>
 
       {/* 統計卡片 */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -526,6 +555,7 @@ export default function MaintenancePage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
+                                  disabled={!isOperablePropertyStatus(properties.find((property) => property.id === record.propertyId)?.status)}
                                   onClick={() => handleUpdateStatus(record.id, 'in_progress')}
                                 >
                                   開始處理
@@ -533,6 +563,7 @@ export default function MaintenancePage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
+                                  disabled={!isOperablePropertyStatus(properties.find((property) => property.id === record.propertyId)?.status)}
                                   onClick={() => handleUpdateStatus(record.id, 'cancelled')}
                                 >
                                   取消
@@ -543,6 +574,7 @@ export default function MaintenancePage() {
                               <Button
                                 variant="outline"
                                 size="sm"
+                                disabled={!isOperablePropertyStatus(properties.find((property) => property.id === record.propertyId)?.status)}
                                 onClick={() => handleUpdateStatus(record.id, 'completed')}
                               >
                                 標記完成
@@ -551,6 +583,7 @@ export default function MaintenancePage() {
                             <Button
                               variant="outline"
                               size="sm"
+                              disabled={!isOperablePropertyStatus(properties.find((property) => property.id === record.propertyId)?.status)}
                               onClick={() => handleEditMaintenance(record)}
                             >
                               編輯
@@ -558,6 +591,7 @@ export default function MaintenancePage() {
                             <Button
                               variant="outline"
                               size="sm"
+                              disabled={!isOperablePropertyStatus(properties.find((property) => property.id === record.propertyId)?.status)}
                               onClick={() => handleDeleteMaintenance(record.id)}
                               className="text-red-600 hover:text-red-700"
                             >
@@ -607,6 +641,11 @@ export default function MaintenancePage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {selectedPropertyMeta ? (
+                  <p className={`text-xs ${propertyStatusBadgeClassName(selectedPropertyMeta.status)}`}>
+                    {getPropertyStatusBadgeLabel(selectedPropertyMeta.status)}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="roomId">房間（選填）</Label>

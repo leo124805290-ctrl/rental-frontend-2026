@@ -15,6 +15,7 @@ import { formatCents } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { allPropertiesPath } from '@/lib/property-status';
 
 interface Property {
   id: string;
@@ -57,7 +58,7 @@ export default function MeterHistoryPage() {
     setLoading(true);
     setError(null);
     try {
-      const p = await api.get<Property[]>('/api/properties');
+      const p = await api.get<Property[]>(allPropertiesPath());
       setProperties(p);
       setPropertyId((prev) => prev || p[0]?.id || '');
     } catch (e) {

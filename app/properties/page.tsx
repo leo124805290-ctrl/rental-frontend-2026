@@ -12,6 +12,12 @@ import PropertyForm, { type PropertyFormData, type PropertyFormSubmitData } from
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import {
+  getPropertyStatusBadgeLabel,
+  isArchivedProperty,
+  isDemoProperty,
+  normalizePropertyStatus,
+} from '@/lib/property-status';
 
 // 模擬物業資料類型
 interface Property {
@@ -90,6 +96,10 @@ export default function PropertiesPage() {
   };
 
   const handleDeleteProperty = (property: Property) => {
+    if (!isDemoProperty(property.status)) {
+      alert('只有測試用（demo）物業可直接刪除；其他物業請改用封存。');
+      return;
+    }
     if (!confirm('確定刪除？')) return;
 
     (async () => {
@@ -99,6 +109,38 @@ export default function PropertiesPage() {
       } catch (err) {
         console.error('刪除物業失敗', err);
         alert(err instanceof Error ? err.message : '刪除失敗，請稍後再試');
+      }
+    })();
+  };
+
+  const handleArchiveProperty = (property: Property) => {
+    if (isArchivedProperty(property.status)) return;
+    if (!confirm(`確定要封存物業「${property.name}」嗎？封存後將停止營運操作，但仍可查看歷史與編輯主檔。`)) {
+      return;
+    }
+
+    (async () => {
+      try {
+        await api.patch(`/api/properties/${property.id}/archive`);
+        await loadProperties();
+      } catch (err) {
+        console.error('封存物業失敗', err);
+        alert(err instanceof Error ? err.message : '封存失敗，請稍後再試');
+      }
+    })();
+  };
+
+  const handleRestoreProperty = (property: Property) => {
+    if (!isArchivedProperty(property.status)) return;
+    if (!confirm(`確定要恢復物業「${property.name}」為使用中嗎？`)) return;
+
+    (async () => {
+      try {
+        await api.patch(`/api/properties/${property.id}/restore`);
+        await loadProperties();
+      } catch (err) {
+        console.error('恢復物業失敗', err);
+        alert(err instanceof Error ? err.message : '恢復失敗，請稍後再試');
       }
     })();
   };
@@ -258,6 +300,8 @@ export default function PropertiesPage() {
             const total = st?.total ?? 0;
             const occ = st?.occ ?? 0;
             const occPct = total > 0 ? Math.round((occ / total) * 100) : 0;
+            const propertyStatus = normalizePropertyStatus(property.status);
+            const canOperate = !isArchivedProperty(property.status);
             return (
             <Card key={property.id} className="hover:shadow-lg transition-shadow">
               <CardHeader>
@@ -274,9 +318,23 @@ export default function PropertiesPage() {
                       {total} 間房 · 入住率 {occPct}%
                     </p>
                   </div>
-                  <Badge variant="outline" className="bg-slate-50 shrink-0">
-                    {property.totalFloors} 層
-                  </Badge>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <Badge variant="outline" className="bg-slate-50">
+                      {property.totalFloors} 層
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className={
+                        propertyStatus === 'archived'
+                          ? 'border-amber-300 bg-amber-50 text-amber-900'
+                          : propertyStatus === 'demo'
+                            ? 'border-violet-300 bg-violet-50 text-violet-900'
+                            : 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                      }
+                    >
+                      {getPropertyStatusBadgeLabel(property.status)}
+                    </Badge>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -322,12 +380,21 @@ export default function PropertiesPage() {
                 </div>
 
                 <div className="flex flex-col gap-2 pt-4">
-                  <Button type="button" size="sm" className="w-full" asChild>
-                    <Link href={`/rooms?propertyId=${encodeURIComponent(String(property.id))}`}>
-                      <DoorOpen className="h-4 w-4 mr-2" />
-                      管理房間
-                    </Link>
-                  </Button>
+                  {canOperate ? (
+                    <Button type="button" size="sm" className="w-full" asChild>
+                      <Link href={`/rooms?propertyId=${encodeURIComponent(String(property.id))}`}>
+                        <DoorOpen className="h-4 w-4 mr-2" />
+                        管理房間
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button type="button" size="sm" variant="outline" className="w-full" asChild>
+                      <Link href={`/properties/${encodeURIComponent(String(property.id))}`}>
+                        <DoorOpen className="h-4 w-4 mr-2" />
+                        查看封存資料
+                      </Link>
+                    </Button>
+                  )}
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Button
                       type="button"
@@ -339,17 +406,44 @@ export default function PropertiesPage() {
                       <Edit className="h-4 w-4 mr-2" />
                       編輯物業
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 text-red-700 border-red-200 hover:bg-red-50"
-                      onClick={() => handleDeleteProperty(property)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      刪除
-                    </Button>
+                    {isDemoProperty(property.status) ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-red-700 border-red-200 hover:bg-red-50"
+                        onClick={() => handleDeleteProperty(property)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        刪除
+                      </Button>
+                    ) : isArchivedProperty(property.status) ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                        onClick={() => handleRestoreProperty(property)}
+                      >
+                        恢復使用中
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 text-amber-700 border-amber-200 hover:bg-amber-50"
+                        onClick={() => handleArchiveProperty(property)}
+                      >
+                        封存
+                      </Button>
+                    )}
                   </div>
+                  {isArchivedProperty(property.status) ? (
+                    <p className="text-xs text-amber-700">
+                      此物業已封存：可編輯主檔與查看歷史，但不可進行房間／入住等營運操作。
+                    </p>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>

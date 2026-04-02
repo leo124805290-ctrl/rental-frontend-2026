@@ -27,6 +27,7 @@ import { formatCents, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { filterOperableProperties } from '@/lib/property-status';
 
 interface Expense {
   id: string;
@@ -99,11 +100,11 @@ export default function FinancePage() {
     setError(null);
     try {
       const [p, e, i] = await Promise.all([
-        api.get<Array<{ id: string; name: string }>>('/api/properties'),
+        api.get<Array<{ id: string; name: string; status?: string }>>('/api/properties'),
         api.get<Expense[]>('/api/expenses'),
         api.get<ExtraIncome[]>('/api/incomes'),
       ]);
-      setProperties(p);
+      setProperties(filterOperableProperties(p));
       setExpenses(e);
       setIncomes(i);
     } catch (err) {
@@ -197,7 +198,7 @@ export default function FinancePage() {
     <PageShell>
       <PageHeader
         title="收支管理"
-        description="支出與補充收入（真實 API）"
+        description="支出與補充收入（僅 active / demo 物業可新增或刪除）"
         actions={
           <Button type="button" variant="outline" onClick={() => void loadAll()} disabled={loading}>
             重新整理

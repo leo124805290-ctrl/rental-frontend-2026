@@ -14,6 +14,7 @@ import { formatCents, formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { filterOperableProperties, findPropertyById, isOperablePropertyStatus, type PropertyStatusLike } from '@/lib/property-status';
 
 // 支出資料類型（與後端 Expense 類型對應）
 interface Expense {
@@ -48,6 +49,11 @@ interface ExpenseFormData {
   recurringPeriod: string;
 }
 
+interface PropertyOption extends PropertyStatusLike {
+  id: string;
+  name: string;
+}
+
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,17 +77,17 @@ export default function ExpensesPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [dateRange, setDateRange] = useState<{ from: string; to: string }>({ from: '', to: '' });
 
-  const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
+  const [properties, setProperties] = useState<PropertyOption[]>([]);
   const [rooms, setRooms] = useState<{ id: string; number: string; propertyId: string }[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
         const [p, r] = await Promise.all([
-          api.get<Array<{ id: string; name: string }>>('/api/properties'),
+          api.get<Array<{ id: string; name: string; status?: string }>>('/api/properties'),
           api.get<Array<{ id: string; roomNumber: string; propertyId: string }>>('/api/rooms'),
         ]);
-        setProperties(p);
+        setProperties(filterOperableProperties(p));
         setRooms(
           r.map((room) => ({
             id: room.id,
@@ -115,6 +121,12 @@ export default function ExpensesPage() {
       setIsLoading(false);
     }
   };
+
+  const selectedPropertyMeta = findPropertyById(properties, selectedProperty);
+  const canCreateExpense =
+    selectedProperty === 'all' ||
+    selectedProperty === '' ||
+    isOperablePropertyStatus(selectedPropertyMeta?.status);
 
   // 篩選後的支出
   const filteredExpenses = expenses.filter(expense => {
@@ -205,6 +217,11 @@ export default function ExpensesPage() {
       alert('請填寫必填欄位（物業、金額、日期）');
       return;
     }
+    const targetProperty = findPropertyById(properties, formData.propertyId);
+    if (!targetProperty || !isOperablePropertyStatus(targetProperty.status)) {
+      alert('封存物業僅可查看歷史，不可新增或編輯支出');
+      return;
+    }
 
     const payload = {
       ...formData,
@@ -286,7 +303,7 @@ export default function ExpensesPage() {
         description="管理固定費用與資本支出，追蹤物業運營成本"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={handleAddExpense}>
+            <Button onClick={handleAddExpense} disabled={!canCreateExpense}>
               <PlusCircle className="mr-2 h-4 w-4" />
               新增支出
             </Button>
@@ -347,6 +364,11 @@ export default function ExpensesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {!canCreateExpense && selectedPropertyMeta ? (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                目前選擇的物業已封存：可查看歷史支出，但不可新增或編輯營運資料。
+              </div>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <div className="space-y-2">
                 <Label htmlFor="property">物業</Label>
@@ -502,6 +524,7 @@ export default function ExpensesPage() {
                               variant="outline"
                               size="sm"
                               onClick={() => handleEditExpense(expense)}
+                              disabled={!isOperablePropertyStatus(findPropertyById(properties, expense.propertyId)?.status)}
                             >
                               編輯
                             </Button>
@@ -510,6 +533,7 @@ export default function ExpensesPage() {
                               size="sm"
                               onClick={() => handleDeleteExpense(expense.id)}
                               className="text-red-600 hover:text-red-700"
+                              disabled={!isOperablePropertyStatus(findPropertyById(properties, expense.propertyId)?.status)}
                             >
                               刪除
                             </Button>

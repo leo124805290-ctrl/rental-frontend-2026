@@ -20,6 +20,10 @@ import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 import {
+  filterOperableProperties,
+  isOperablePropertyStatus,
+} from '@/lib/property-status';
+import {
   prorationRentYuan,
   daysRemainingInMonthForRent,
   ymFromTenantCheckIn,
@@ -171,6 +175,12 @@ function PaymentsPageContent() {
   const [meterErrorByRoom, setMeterErrorByRoom] = useState<Record<string, string>>({});
   const [monthlyFeedback, setMonthlyFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const selectedProperty = useMemo(
+    () => properties.find((property) => property.id === selectedPropertyId) ?? null,
+    [properties, selectedPropertyId],
+  );
+  const canOperateSelectedProperty = isOperablePropertyStatus(selectedProperty?.status);
+
   useEffect(() => {
     const m = searchParams.get('month');
     if (m && /^\d{4}-\d{2}$/.test(m)) {
@@ -199,7 +209,7 @@ function PaymentsPageContent() {
       setIsLoading(true);
       try {
         const props = await api.get<Property[]>('/api/properties');
-        const allowed = props.filter((p) => p.status !== 'archived');
+        const allowed = filterOperableProperties(props);
         setProperties(allowed);
         setSelectedPropertyId((prev) => prev || allowed[0]?.id || '');
       } catch (e) {
@@ -459,6 +469,10 @@ function PaymentsPageContent() {
   }, [occupiedRooms.length, roomRows]);
 
   const handleGenerateMonthly = async () => {
+    if (!canOperateSelectedProperty) {
+      alert('已封存物業不可建立新帳單');
+      return;
+    }
     if (!confirm(`確定為所有已入住房間建立 ${selectedMonth} 租金帳單？已存在者略過。`)) return;
     setMonthlyBusy(true);
     setMonthlyFeedback(null);
@@ -483,6 +497,10 @@ function PaymentsPageContent() {
   };
 
   const saveMeter = async (room: Room) => {
+    if (!canOperateSelectedProperty) {
+      alert('已封存物業不可新增抄表紀錄');
+      return;
+    }
     const d = meterDraft[room.id];
     if (!d) return;
     const parsed = parseMeterReadingInput(d.current);
@@ -548,6 +566,10 @@ function PaymentsPageContent() {
     rent: PaymentRow | null,
     elec: PaymentRow | null,
   ) => {
+    if (!canOperateSelectedProperty) {
+      alert('已封存物業不可進行收款');
+      return;
+    }
     const key = room.id;
     const yuan = parseFloat((payAmountYuan[key] || '0').replace(/,/g, ''));
     if (Number.isNaN(yuan) || yuan <= 0) {
@@ -626,7 +648,7 @@ function PaymentsPageContent() {
             <Button
               type="button"
               className="bg-blue-600 hover:bg-blue-700"
-              disabled={monthlyBusy || !selectedPropertyId}
+              disabled={monthlyBusy || !selectedPropertyId || !canOperateSelectedProperty}
               onClick={() => void handleGenerateMonthly()}
             >
               {monthlyBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CalendarRange className="mr-2 h-4 w-4" />}
@@ -698,6 +720,14 @@ function PaymentsPageContent() {
           ) : null}
         </CardContent>
       </Card>
+
+      {!canOperateSelectedProperty && selectedProperty ? (
+        <Card className="mb-4 border-amber-200 bg-amber-50">
+          <CardContent className="py-3 text-sm text-amber-900">
+            目前選定的物業「{selectedProperty.name}」已封存：可查看歷史帳單，但不可新增帳單、收款或新增抄表。
+          </CardContent>
+        </Card>
+      ) : null}
 
       {!newTenantTipDismissed && newTenantsInMonth.length > 0 && (
         <div className="relative mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 sm:p-4 text-amber-950 shadow-sm">
