@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import CheckinModal, { type CheckinSubmitPayload } from './components/checkin-mo
 import { api, ApiError } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
+import { filterOperableProperties, type PropertyStatusLike } from '@/lib/property-status';
 
 // 租客資料類型
 interface Tenant {
@@ -48,6 +49,7 @@ interface Room {
 interface Property {
   id: string;
   name: string;
+  status?: string;
 }
 
 export default function TenantsPage() {
@@ -63,6 +65,7 @@ export default function TenantsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [propertyFilter, setPropertyFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('active'); // 'all', 'active', 'checked_out'
+  const [operablePropertyIds, setOperablePropertyIds] = useState<Set<string>>(new Set());
 
   // 載入租客資料
   useEffect(() => {
@@ -103,17 +106,33 @@ export default function TenantsPage() {
         Object.values(roomsMap).map((r) => String(r.propertyId)),
       );
 
+      const explicitOperablePropertyIds = new Set(
+        filterOperableProperties(
+          propertyList.map((p) => ({
+            id: String((p as { id?: unknown }).id ?? ''),
+            status: (p as PropertyStatusLike).status,
+          })),
+        ).map((p) => p.id),
+      );
+      setOperablePropertyIds(explicitOperablePropertyIds);
+
       const propsMap: Record<string, Property> = {};
       for (const p of propertyList) {
         const pid = String(p.id);
-        if (!allowedPropertyIds.has(pid)) continue;
-        propsMap[pid] = { id: pid, name: String(p.name ?? '') };
+        if (!allowedPropertyIds.has(pid) || !explicitOperablePropertyIds.has(pid)) continue;
+        propsMap[pid] = {
+          id: pid,
+          name: String(p.name ?? ''),
+          ...(p.status != null ? { status: String(p.status) } : {}),
+        };
       }
 
-      // archived 物業的租客若其房間不在 roomsMap 中，則不顯示於此操作頁
+      // archived 物業的租客若其物業已不可操作，則不顯示於此操作頁
       const normalizedTenants: Tenant[] = tenantList.reduce<Tenant[]>((acc, t) => {
         const roomIdKey = String(t.roomId);
         if (!roomsMap[roomIdKey]) return acc;
+        const propertyIdKey = String(t.propertyId);
+        if (!explicitOperablePropertyIds.has(propertyIdKey)) return acc;
 
         const status = (t.status === 'checked_out' ? 'checked_out' : 'active') as Tenant['status'];
         acc.push({
@@ -171,6 +190,12 @@ export default function TenantsPage() {
 
     return true;
   });
+
+  const availableCheckinRooms = useMemo(
+    () =>
+      Object.values(rooms).filter((room) => operablePropertyIds.has(String(room.propertyId))),
+    [rooms, operablePropertyIds],
+  );
 
   const handleCheckin = () => setCheckinOpen(true);
 
@@ -284,7 +309,7 @@ export default function TenantsPage() {
     <PageShell>
       <PageHeader
         title="租客管理"
-        description="管理所有租客資訊"
+        description="管理所有租客資訊（僅顯示 active / demo 物業；已封存物業請至物業詳情查看歷史）"
         actions={
           <Button onClick={handleCheckin}>
             <Plus className="mr-2 h-4 w-4" />
@@ -294,6 +319,13 @@ export default function TenantsPage() {
       />
 
       {/* 篩選區域 */}
+      <Card className="mb-4 border-slate-300 bg-slate-50">
+        <CardContent className="py-3 text-sm text-slate-800">
+          <span className="font-medium">可操作範圍</span>
+          ：本頁僅顯示 active / demo 物業租客，封存物業租客請從歷史資料或物業詳情查看。
+        </CardContent>
+      </Card>
+
       <Card className="mb-8">
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -479,7 +511,7 @@ export default function TenantsPage() {
         isOpen={checkinOpen}
         onClose={() => setCheckinOpen(false)}
         onSubmit={handleSubmitCheckin}
-        rooms={Object.values(rooms)}
+        rooms={availableCheckinRooms}
       />
     </PageShell>
   );

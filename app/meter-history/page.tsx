@@ -149,13 +149,20 @@ export default function MeterHistoryPage() {
     <PageShell>
       <PageHeader
         title="電錶歷史"
-        description="依房間查詢抄表紀錄（唯讀）"
+        description="依房間查詢抄表紀錄（唯讀）。封存物業可查看歷史抄表資料。"
         actions={
           <Button type="button" variant="outline" onClick={() => void loadProps()}>
             重新整理
           </Button>
         }
       />
+
+      <Card className="mb-4 border-slate-300 bg-slate-50">
+        <CardContent className="py-3 text-sm text-slate-800">
+          <span className="font-medium">歷史可見</span>
+          ：本頁允許查看封存物業的電錶歷史，但不提供抄錶或任何營運寫入操作。
+        </CardContent>
+      </Card>
 
       {error && (
         <Card className="border-red-200 mb-4">

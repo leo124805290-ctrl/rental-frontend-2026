@@ -252,8 +252,15 @@ export default function ReportsPage() {
         }
       />
 
-        {/* 篩選器 */}
-        <Card>
+      <Card className="border-slate-300 bg-slate-50">
+        <CardContent className="py-3 text-sm text-slate-800">
+          <span className="font-medium">歷史可見</span>
+          ：封存物業仍會顯示於本頁報表與分析中，但不可從這裡進入房間、收款、抄表或其它營運操作。
+        </CardContent>
+      </Card>
+
+      {/* 篩選器 */}
+      <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
               <Filter className="mr-2 h-5 w-5" />

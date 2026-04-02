@@ -162,6 +162,12 @@ export default function DepositsPage() {
         </CardContent>
       </Card>
 
+      <Card className="mb-4 border-amber-200 bg-amber-50/80">
+        <CardContent className="py-3 text-sm text-amber-950">
+          本頁保留 <span className="font-medium">已封存物業</span> 的歷史押金流水供查詢；若物業已封存，僅能查看，不可從此頁進行營運操作。
+        </CardContent>
+      </Card>
+
       <Card className="mb-4">
         <CardHeader>
           <CardTitle className="text-base">查詢條件</CardTitle>

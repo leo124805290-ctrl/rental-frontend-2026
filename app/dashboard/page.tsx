@@ -10,6 +10,7 @@ import { formatCents } from '@/lib/utils';
 import { PageShell } from '@/components/app-shell/page-shell';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { api } from '@/lib/api-client';
+import { filterOperableProperties } from '@/lib/property-status';
 
 interface SummaryApi {
   month: string;
@@ -48,6 +49,11 @@ interface ExpenseRow {
   category: string;
   amount: number;
   expenseDate: string;
+}
+
+interface PropertyOption {
+  id: string;
+  status?: string;
 }
 
 function currentMonthYm(): string {
@@ -107,7 +113,13 @@ export default function DashboardPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const s = await api.get<SummaryApi>(`/api/reports/summary?month=${encodeURIComponent(summaryMonth)}`);
+      const [allProperties, s] = await Promise.all([
+        api.get<PropertyOption[]>('/api/properties'),
+        api.get<SummaryApi>(`/api/reports/summary?month=${encodeURIComponent(summaryMonth)}`),
+      ]);
+      const operablePropertyIds = new Set(
+        filterOperableProperties(Array.isArray(allProperties) ? allProperties : []).map((property) => property.id),
+      );
       setSummary(s);
 
       const paymentsMonth = await api.get<PaymentRow[]>(
@@ -116,6 +128,8 @@ export default function DashboardPage() {
       let rent = 0;
       let elec = 0;
       for (const p of paymentsMonth) {
+        const propertyId = String((p as PaymentRow & { propertyId?: string }).propertyId ?? '');
+        if (propertyId && !operablePropertyIds.has(propertyId)) continue;
         const amt = Number(p.totalAmount ?? 0);
         if (p.lineType === 'rent') rent += amt;
         else if (p.lineType === 'electricity') elec += amt;
@@ -123,7 +137,11 @@ export default function DashboardPage() {
 
       const incomesAll = await api.get<ExtraIncome[]>('/api/incomes');
       const extra = incomesAll
-        .filter((i) => isInMonth(typeof i.incomeDate === 'string' ? i.incomeDate : String(i.incomeDate), summaryMonth))
+        .filter(
+          (i) =>
+            operablePropertyIds.has(String(i.propertyId)) &&
+            isInMonth(typeof i.incomeDate === 'string' ? i.incomeDate : String(i.incomeDate), summaryMonth),
+        )
         .reduce((sum, i) => sum + Number(i.amount ?? 0), 0);
 
       setIncomeRent(rent);
@@ -133,6 +151,7 @@ export default function DashboardPage() {
       const expensesAll = await api.get<ExpenseRow[]>('/api/expenses');
       const { start, end } = monthStartEnd(summaryMonth);
       const monthExp = expensesAll.filter((e) => {
+        if (!operablePropertyIds.has(String(e.propertyId))) return false;
         const d = new Date(e.expenseDate);
         return d >= start && d <= end;
       });
@@ -152,7 +171,11 @@ export default function DashboardPage() {
       setExpOther(eoth);
 
       const pend = await api.get<PaymentRow[]>('/api/payments?status=pending');
-      const open = pend.filter((p) => Number(p.paidAmount ?? 0) < Number(p.totalAmount ?? 0));
+      const open = pend.filter((p) => {
+        const propertyId = String((p as PaymentRow & { propertyId?: string }).propertyId ?? '');
+        if (propertyId && !operablePropertyIds.has(propertyId)) return false;
+        return Number(p.paidAmount ?? 0) < Number(p.totalAmount ?? 0);
+      });
       setPending(open);
     } catch (e) {
       console.error(e);
@@ -177,7 +200,7 @@ export default function DashboardPage() {
     <PageShell>
       <PageHeader
         title="儀表板"
-        description="本月總覽、收支明細與待收帳單（資料來自後端 API）"
+        description="本月總覽、收支明細與待收帳單（僅統計 active / demo 營運中物業）"
         actions={
           <>
             <div className="flex items-center gap-2">

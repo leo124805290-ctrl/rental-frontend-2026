@@ -35,11 +35,43 @@
 - `npm run lint`
   - 已改為可非互動執行的 `eslint .`
 
+### 本輪再續作已完成：封存物業規則統一
+
+- 新增共用規則檔
+  - `lib/property-status.ts`
+- 規則正式定稿
+  - `active / demo`：可營運操作
+  - `archived`：可看歷史、可編輯物業主檔、不可營運操作
+- 物業主檔頁
+  - `/properties`
+    - 保留新增物業
+    - `demo` 可硬刪
+    - 非 demo 改為封存／恢復語意
+    - archived 仍可編輯主檔
+  - `/properties/[id]`
+    - archived 不再整頁封鎖
+    - 可查看主檔與歷史房間資料
+    - 房間新增／入住／刪除／退租等營運按鈕停用
+- 營運可寫頁面（僅 active/demo 可操作）
+  - `app/payment-details/page.tsx`
+  - `app/meter-readings/page.tsx`
+  - `app/checkout/page.tsx`
+  - `app/maintenance/page.tsx`
+  - `app/expenses/page.tsx`
+  - `app/incomes/page.tsx`
+  - `app/finance/page.tsx`
+- 歷史／報表頁面（保留 archived 可見）
+  - `app/reports/page.tsx`
+  - `app/meter-history/page.tsx`
+  - `app/deposits/page.tsx`
+- Dashboard 規則
+  - `/dashboard` 改為只看 active/demo，作為營運看板
+
 ### 下一步執行順序（不需再問）
 
-1. 確認 `reports / users` 是否需要比照其它操作頁，避免顯示或操作 `archived` 物業關聯資料。
-2. 補齊物業封存後其它入口的禁用策略，不只限於 `/properties/[id]`。
-3. 若需再往下做，再檢查是否仍有局部頁面需要細部 spacing / section header 對齊。
+1. 若要再往下做，先補 archived 狀態提示文案／badge 的視覺一致性。
+2. 檢查 `users` 是否需要補充封存物業規則說明（目前無直接物業營運操作）。
+3. 若要長期維護，考慮抽共用 PropertySelect 元件與補小型規則測試。
 
 ---
 
@@ -79,7 +111,7 @@
   - `npm run build`：✅
 
 #### 尚未完成（下一輪要接）
-- `reports / users` 等頁面：需要確認它們是否仍會顯示/允許操作 `archived` 物業關聯資料（後續要統一「只可操作 active；必要時僅在報表/歷史顯示」）
-- 新增物業封存後的「操作入口禁用」：目前只先做了物業詳情頁（`/properties/[id]`）的封存只讀；其它入口仍需逐頁補齊
+- `users` 等非物業營運頁：若需顯示封存規則說明，可補 UI 提示
+- archived badge / 說明文案：目前規則已到位，但各頁提示文案仍可再一致化
 - 預留後端管理入口：一鍵清除所有 `demo` 物業及其關聯資料（尚未做）
 
