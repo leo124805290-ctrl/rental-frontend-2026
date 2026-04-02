@@ -578,7 +578,7 @@ export default function PropertyDetailPage() {
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
         {/* 左側：物業資訊 */}
         <div className="lg:col-span-1">
           <Card>
@@ -709,15 +709,19 @@ export default function PropertyDetailPage() {
 
         {/* 右側：房間列表 */}
         <div className="lg:col-span-2">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">房間管理</h2>
-              <p className="text-gray-600 mt-1">管理此物業的所有房間</p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+                房間管理
+              </h2>
+              <p className="text-sm text-muted-foreground">管理此物業的所有房間</p>
             </div>
-            <Button onClick={handleAddRoom}>
-              <Plus className="h-4 w-4 mr-2" />
-              新增房間
-            </Button>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button onClick={handleAddRoom}>
+                <Plus className="h-4 w-4 mr-2" />
+                新增房間
+              </Button>
+            </div>
           </div>
 
           {rooms.length === 0 ? (
@@ -735,11 +739,11 @@ export default function PropertyDetailPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {rooms.map((room) => (
-                <Card key={room.id} className="hover:shadow-lg transition-shadow">
+                <Card key={room.id} className="transition-shadow hover:shadow-lg">
                   <CardHeader className="pb-3">
-                    <div className="flex justify-between items-start">
+                    <div className="flex items-start justify-between">
                       <div>
                         <CardTitle className="text-xl font-bold text-gray-900">
                           {room.roomNumber} 號房
@@ -749,16 +753,12 @@ export default function PropertyDetailPage() {
                           {room.floor} 樓
                         </CardDescription>
                       </div>
-                  {(() => {
-                    const meta =
-                      roomStatusConfig[room.status as keyof typeof roomStatusConfig] ??
-                      roomStatusConfig.vacant;
-                    return (
-                      <Badge className={meta.color}>
-                        {meta.label}
-                      </Badge>
-                    );
-                  })()}
+                      {(() => {
+                        const meta =
+                          roomStatusConfig[room.status as keyof typeof roomStatusConfig] ??
+                          roomStatusConfig.vacant;
+                        return <Badge className={meta.color}>{meta.label}</Badge>;
+                      })()}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-4">

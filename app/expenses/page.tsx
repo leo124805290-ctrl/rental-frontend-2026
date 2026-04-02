@@ -281,26 +281,25 @@ export default function ExpensesPage() {
 
   return (
     <PageShell>
-      <div className="flex flex-col space-y-6">
-        <PageHeader
-          title="支出管理"
-          description="管理固定費用與資本支出，追蹤物業運營成本"
-          actions={
-            <>
-              <Button onClick={handleAddExpense}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                新增支出
-              </Button>
-              <Button variant="outline">
-                <Download className="mr-2 h-4 w-4" />
-                匯出報表
-              </Button>
-            </>
-          }
-        />
+      <PageHeader
+        title="支出管理"
+        description="管理固定費用與資本支出，追蹤物業運營成本"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={handleAddExpense}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              新增支出
+            </Button>
+            <Button variant="outline">
+              <Download className="mr-2 h-4 w-4" />
+              匯出報表
+            </Button>
+          </div>
+        }
+      />
 
-        {/* 統計卡片 */}
-        <div className="grid gap-4 md:grid-cols-3">
+      {/* 統計卡片 */}
+      <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">固定費用</CardTitle>
@@ -337,10 +336,10 @@ export default function ExpensesPage() {
               </p>
             </CardContent>
           </Card>
-        </div>
+      </div>
 
-        {/* 篩選器 */}
-        <Card>
+      {/* 篩選器 */}
+      <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
               <Filter className="mr-2 h-5 w-5" />
@@ -426,10 +425,10 @@ export default function ExpensesPage() {
               </div>
             </div>
           </CardContent>
-        </Card>
+      </Card>
 
-        {/* 支出列表 */}
-        <Card>
+      {/* 支出列表 */}
+      <Card>
           <CardHeader>
             <CardTitle>支出紀錄</CardTitle>
             <CardDescription>
@@ -523,7 +522,7 @@ export default function ExpensesPage() {
               </div>
             )}
           </CardContent>
-        </Card>
+      </Card>
       
 
       {/* 新增/編輯支出對話框 */}
@@ -693,7 +692,6 @@ export default function ExpensesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      </div>
     </PageShell>
   );
 }

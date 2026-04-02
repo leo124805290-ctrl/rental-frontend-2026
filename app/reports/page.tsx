@@ -237,17 +237,16 @@ export default function ReportsPage() {
 
   return (
     <PageShell>
-      <div className="flex flex-col space-y-6">
-        <PageHeader
-          title="損益報表"
-          description="分析物業收入、支出與淨利，掌握營運狀況"
-          actions={
-            <Button onClick={handleExport}>
-              <Download className="mr-2 h-4 w-4" />
-              匯出報表
-            </Button>
-          }
-        />
+      <PageHeader
+        title="損益報表"
+        description="分析物業收入、支出與淨利，掌握營運狀況"
+        actions={
+          <Button onClick={handleExport}>
+            <Download className="mr-2 h-4 w-4" />
+            匯出報表
+          </Button>
+        }
+      />
 
         {/* 篩選器 */}
         <Card>
@@ -814,7 +813,6 @@ export default function ReportsPage() {
             </>
           )
         )}
-      </div>
     </PageShell>
   );
 }

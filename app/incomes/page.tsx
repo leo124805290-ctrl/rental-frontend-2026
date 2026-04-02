@@ -197,26 +197,25 @@ export default function IncomesPage() {
 
   return (
     <PageShell>
-      <div className="flex flex-col space-y-6">
-        <PageHeader
-          title="補充收入"
-          description="管理洗衣機、販賣機等其他補充收入來源"
-          actions={
-            <>
-              <Button onClick={handleAddIncome}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                新增收入
-              </Button>
-              <Button variant="outline">
-                <Download className="mr-2 h-4 w-4" />
-                匯出報表
-              </Button>
-            </>
-          }
-        />
+      <PageHeader
+        title="補充收入"
+        description="管理洗衣機、販賣機等其他補充收入來源"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={handleAddIncome}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              新增收入
+            </Button>
+            <Button variant="outline">
+              <Download className="mr-2 h-4 w-4" />
+              匯出報表
+            </Button>
+          </div>
+        }
+      />
 
-        {/* 統計卡片 */}
-        <div className="grid gap-4 md:grid-cols-4">
+      {/* 統計卡片 */}
+      <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">洗衣機收入</CardTitle>
@@ -265,10 +264,10 @@ export default function IncomesPage() {
               </p>
             </CardContent>
           </Card>
-        </div>
+      </div>
 
-        {/* 篩選器 */}
-        <Card>
+      {/* 篩選器 */}
+      <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
               <Filter className="mr-2 h-5 w-5" />
@@ -338,10 +337,10 @@ export default function IncomesPage() {
               </div>
             </div>
           </CardContent>
-        </Card>
+      </Card>
 
-        {/* 收入列表 */}
-        <Card>
+      {/* 收入列表 */}
+      <Card>
           <CardHeader>
             <CardTitle>收入紀錄</CardTitle>
             <CardDescription>
@@ -418,8 +417,7 @@ export default function IncomesPage() {
               </div>
             )}
           </CardContent>
-        </Card>
-      
+      </Card>
 
       {/* 新增收入對話框 */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
@@ -509,7 +507,6 @@ export default function IncomesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      </div>
     </PageShell>
   );
 }

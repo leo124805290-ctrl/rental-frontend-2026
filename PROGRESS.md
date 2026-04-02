@@ -19,31 +19,27 @@
   - `npm run type-check`：✅
   - `npm run build`：✅
 
-### 未完成（待做）
+### 本輪續作已完成
 
-#### A) 尚未套用統一版型的頁面（仍使用 `container mx-auto ...`）
-- `app/meter-readings/page.tsx`
-- `app/expenses/page.tsx`
-- `app/incomes/page.tsx`
-- `app/maintenance/page.tsx`
-- `app/reports/page.tsx`
-- `app/users/page.tsx`
-- `app/properties/[id]/page.tsx`（此頁有多處 container/間距，需要一次性統一）
-
-#### B) `@ts-nocheck` 狀態（技術債）
-目前已確認：`rental-frontend-2026/app` 目錄底下沒有找到 `@ts-nocheck`（舊輪技術債已清掉）。
-
-（原則：先做「版型統一」確保視覺一致，再逐頁拿掉 `@ts-nocheck`，每移除一頁就跑 `npm run type-check`。）
-
-#### C) lint 指令目前會進入互動式流程
-- `npm run lint` 目前跑 `next lint`，在 Next.js 15 會提示遷移並要求互動選項，會卡住自動化驗證。
-- 待處理方向：改成 ESLint CLI（例如 `eslint .`），或加入可非互動執行的 lint 流程。
+- 補齊剩餘頁面的統一版型（PageShell + PageHeader）
+  - `app/users/page.tsx`
+  - `app/incomes/page.tsx`
+  - `app/expenses/page.tsx`
+  - `app/maintenance/page.tsx`
+  - `app/reports/page.tsx`
+  - `app/meter-readings/page.tsx`
+  - `app/properties/[id]/page.tsx`
+- `app/properties/[id]/page.tsx`
+  - 右側「房間管理」區塊改為與全站一致的 section header 樣式
+  - 保留原有房間操作邏輯，只整理骨架與間距
+- `npm run lint`
+  - 已改為可非互動執行的 `eslint .`
 
 ### 下一步執行順序（不需再問）
 
-1. 先把 A 清單頁面全部改成 PageShell + PageHeader（僅調整版型/間距/標題 actions，不動業務邏輯）。
-2. 逐頁移除 B 的 `@ts-nocheck`，修正 TS/未使用變數/不正確型別，並持續維持 `type-check` 與 `build` 通過。
-3. 最後處理 C：讓 `npm run lint` 可在無互動情境下跑完。
+1. 確認 `reports / users` 是否需要比照其它操作頁，避免顯示或操作 `archived` 物業關聯資料。
+2. 補齊物業封存後其它入口的禁用策略，不只限於 `/properties/[id]`。
+3. 若需再往下做，再檢查是否仍有局部頁面需要細部 spacing / section header 對齊。
 
 ---
 

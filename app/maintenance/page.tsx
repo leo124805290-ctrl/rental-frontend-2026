@@ -291,26 +291,25 @@ export default function MaintenancePage() {
 
   return (
     <PageShell>
-      <div className="flex flex-col space-y-6">
-        <PageHeader
-          title="維修紀錄管理"
-          description="管理物業維修需求、追蹤處理進度、記錄維修成本"
-          actions={
-            <>
-              <Button onClick={handleAddMaintenance}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                新增維修
-              </Button>
-              <Button variant="outline">
-                <Download className="mr-2 h-4 w-4" />
-                匯出報表
-              </Button>
-            </>
-          }
-        />
+      <PageHeader
+        title="維修紀錄管理"
+        description="管理物業維修需求、追蹤處理進度、記錄維修成本"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={handleAddMaintenance}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              新增維修
+            </Button>
+            <Button variant="outline">
+              <Download className="mr-2 h-4 w-4" />
+              匯出報表
+            </Button>
+          </div>
+        }
+      />
 
-        {/* 統計卡片 */}
-        <div className="grid gap-4 md:grid-cols-4">
+      {/* 統計卡片 */}
+      <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">待處理</CardTitle>
@@ -361,8 +360,8 @@ export default function MaintenancePage() {
           </Card>
         </div>
 
-        {/* 篩選器 */}
-        <Card>
+      {/* 篩選器 */}
+      <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
               <Filter className="mr-2 h-5 w-5" />
@@ -431,8 +430,8 @@ export default function MaintenancePage() {
           </CardContent>
         </Card>
 
-        {/* 維修紀錄列表 */}
-        <Card>
+      {/* 維修紀錄列表 */}
+      <Card>
           <CardHeader>
             <CardTitle>維修紀錄列表</CardTitle>
             <CardDescription>
@@ -724,7 +723,6 @@ export default function MaintenancePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      </div>
     </PageShell>
   );
 }

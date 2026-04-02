@@ -194,26 +194,25 @@ export default function MeterReadingsPage() {
 
   return (
     <PageShell>
-      <div className="flex flex-col space-y-6">
-        <PageHeader
-          title="抄電錶管理"
-          description="記錄各房間電錶讀數，自動計算用電度數與電費"
-          actions={
-            <>
-              <Button onClick={handleBatchSave}>
-                <SaveAll className="mr-2 h-4 w-4" />
-                批次儲存
-              </Button>
-              <Button variant="outline" onClick={loadMeterData}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                重新整理
-              </Button>
-            </>
-          }
-        />
+      <PageHeader
+        title="抄電錶管理"
+        description="記錄各房間電錶讀數，自動計算用電度數與電費"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={handleBatchSave}>
+              <SaveAll className="mr-2 h-4 w-4" />
+              批次儲存
+            </Button>
+            <Button variant="outline" onClick={loadMeterData}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              重新整理
+            </Button>
+          </div>
+        }
+      />
 
-        {/* 統計卡片 */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      {/* 統計卡片 */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">待抄錶房間</CardTitle>
@@ -256,10 +255,10 @@ export default function MeterReadingsPage() {
               </p>
             </CardContent>
           </Card>
-        </div>
+      </div>
 
-        {/* 篩選與設定 */}
-        <Card>
+      {/* 篩選與設定 */}
+      <Card>
           <CardHeader>
             <CardTitle>抄錶設定</CardTitle>
           </CardHeader>
@@ -315,10 +314,10 @@ export default function MeterReadingsPage() {
               </div>
             </div>
           </CardContent>
-        </Card>
+      </Card>
 
-        {/* 電錶表格 */}
-        <Card>
+      {/* 電錶表格 */}
+      <Card>
           <CardHeader>
             <CardTitle>房間電錶清單</CardTitle>
             <CardDescription>
@@ -397,10 +396,10 @@ export default function MeterReadingsPage() {
               </div>
             )}
           </CardContent>
-        </Card>
+      </Card>
 
-        {/* 快速操作 */}
-        <Card>
+      {/* 快速操作 */}
+      <Card>
           <CardHeader>
             <CardTitle>快速操作</CardTitle>
             <CardDescription>批次處理與工具</CardDescription>
@@ -442,8 +441,7 @@ export default function MeterReadingsPage() {
               </Button>
             </div>
           </CardContent>
-        </Card>
-      </div>
+      </Card>
 
       {/* 批次儲存對話框 */}
       <Dialog open={showBatchDialog} onOpenChange={setShowBatchDialog}>
