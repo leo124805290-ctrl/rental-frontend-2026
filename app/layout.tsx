@@ -19,11 +19,14 @@ import {
 } from 'lucide-react';
 import { UserSessionMenu } from '@/components/app-shell/user-session-menu';
 
-const navItems = [
+const primaryNavItems = [
   { href: '/dashboard', label: '儀表板', icon: LayoutDashboard },
   { href: '/properties', label: '物業管理', icon: Building },
   { href: '/rooms', label: '房間管理', icon: DoorOpen },
   { href: '/payment-details', label: '收款明細', icon: CreditCard },
+];
+
+const secondaryNavItems = [
   { href: '/deposits', label: '押金管理', icon: History },
   { href: '/checkout', label: '退租結算', icon: LogOut },
   { href: '/finance', label: '收支管理', icon: Wallet },
@@ -118,28 +121,59 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               </button>
             </div>
 
-            <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-2 pb-4">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.href);
+            <nav className="mt-3 flex-1 space-y-4 overflow-y-auto px-2 pb-4">
+              <div className="space-y-0.5">
+                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  主要功能
+                </div>
+                {primaryNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.href);
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={[
-                      'flex items-center gap-3 rounded-r-lg border-l-[3px] py-2.5 pl-[calc(0.75rem-3px)] pr-3 text-sm font-medium transition-colors duration-150',
-                      active
-                        ? 'border-landlord-400 bg-slate-800/90 text-white'
-                        : 'border-transparent text-slate-300 hover:border-slate-600 hover:bg-slate-800/60 hover:text-white',
-                    ].join(' ')}
-                    onClick={() => setSidebarOpen(false)}
-                  >
-                    <Icon className="h-5 w-5 flex-shrink-0 opacity-90" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={[
+                        'flex items-center gap-3 rounded-r-lg border-l-[3px] py-2.5 pl-[calc(0.75rem-3px)] pr-3 text-sm font-medium transition-colors duration-150',
+                        active
+                          ? 'border-landlord-400 bg-slate-800/90 text-white'
+                          : 'border-transparent text-slate-300 hover:border-slate-600 hover:bg-slate-800/60 hover:text-white',
+                      ].join(' ')}
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <Icon className="h-5 w-5 flex-shrink-0 opacity-90" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+              <div className="space-y-0.5">
+                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  其他功能
+                </div>
+                {secondaryNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.href);
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={[
+                        'flex items-center gap-3 rounded-r-lg border-l-[3px] py-2.5 pl-[calc(0.75rem-3px)] pr-3 text-sm font-medium transition-colors duration-150',
+                        active
+                          ? 'border-landlord-400 bg-slate-800/90 text-white'
+                          : 'border-transparent text-slate-300 hover:border-slate-600 hover:bg-slate-800/60 hover:text-white',
+                      ].join(' ')}
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <Icon className="h-5 w-5 flex-shrink-0 opacity-90" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
             </nav>
 
             <div className="shrink-0 border-t border-slate-800/80 px-4 py-3 text-[11px] text-slate-500">
