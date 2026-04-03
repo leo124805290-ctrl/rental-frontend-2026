@@ -3,7 +3,7 @@
 import './globals.css';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   LayoutDashboard,
   Building,
@@ -16,17 +16,25 @@ import {
   Menu,
   History,
   DoorOpen,
+  Eye,
+  Lock,
 } from 'lucide-react';
 import { UserSessionMenu } from '@/components/app-shell/user-session-menu';
+import { getStoredAuthUser, touchAuthSession, type AuthUser } from '@/lib/auth-user';
+import {
+  getPageAccessLevel,
+  getVisibleNavItems,
+  type NavItem,
+} from '@/lib/page-access';
 
-const primaryNavItems = [
+const primaryNavItems: NavItem[] = [
   { href: '/dashboard', label: '儀表板', icon: LayoutDashboard },
   { href: '/properties', label: '物業管理', icon: Building },
   { href: '/rooms', label: '房間管理', icon: DoorOpen },
   { href: '/payment-details', label: '收款明細', icon: CreditCard },
 ];
 
-const secondaryNavItems = [
+const secondaryNavItems: NavItem[] = [
   { href: '/deposits', label: '押金管理', icon: History },
   { href: '/checkout', label: '退租結算', icon: LogOut },
   { href: '/finance', label: '收支管理', icon: Wallet },
@@ -54,6 +62,18 @@ function pageTitleFromPath(pathname: string): string {
 export default function RootLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    setCurrentUser(getStoredAuthUser());
+    const handleUserChanged = () => setCurrentUser(getStoredAuthUser());
+    window.addEventListener('auth-user-changed', handleUserChanged);
+    return () => window.removeEventListener('auth-user-changed', handleUserChanged);
+  }, []);
+
+  useEffect(() => {
+    touchAuthSession(pathname);
+  }, [pathname]);
 
   const isActive = (href: string) => {
     if (href === '/dashboard' && pathname === '/') return true;
@@ -81,6 +101,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     typeof process.env['APP_VERSION'] === 'string' && process.env['APP_VERSION']
       ? process.env['APP_VERSION']
       : '2.0.0';
+
+  const visiblePrimaryNavItems = getVisibleNavItems(primaryNavItems, currentUser);
+  const visibleSecondaryNavItems = getVisibleNavItems(secondaryNavItems, currentUser);
+
+  const accessMeta = (
+    href: string,
+  ): { level: 'readonly' | 'hidden'; label: string; Icon: typeof Eye | typeof Lock } | null => {
+    const level = getPageAccessLevel(href, currentUser);
+    if (level === 'manage') return null;
+    return level === 'readonly'
+      ? { level, label: '唯讀', Icon: Eye }
+      : { level, label: '隱藏', Icon: Lock };
+  };
 
   return (
     <html lang="zh-TW">
@@ -126,9 +159,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   主要功能
                 </div>
-                {primaryNavItems.map((item) => {
+                {visiblePrimaryNavItems.map((item) => {
                   const Icon = item.icon;
                   const active = isActive(item.href);
+                  const meta = accessMeta(item.href);
 
                   return (
                     <Link
@@ -143,7 +177,22 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                       onClick={() => setSidebarOpen(false)}
                     >
                       <Icon className="h-5 w-5 flex-shrink-0 opacity-90" />
-                      <span>{item.label}</span>
+                      <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                        <span className="truncate">{item.label}</span>
+                        {meta ? (
+                          <span
+                            className={[
+                              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                              meta.level === 'readonly'
+                                ? 'bg-slate-700/80 text-slate-100'
+                                : 'bg-slate-800 text-slate-400',
+                            ].join(' ')}
+                          >
+                            <meta.Icon className="h-3 w-3" />
+                            {meta.label}
+                          </span>
+                        ) : null}
+                      </div>
                     </Link>
                   );
                 })}
@@ -152,9 +201,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                   其他功能
                 </div>
-                {secondaryNavItems.map((item) => {
+                {visibleSecondaryNavItems.map((item) => {
                   const Icon = item.icon;
                   const active = isActive(item.href);
+                  const meta = accessMeta(item.href);
 
                   return (
                     <Link
@@ -169,7 +219,22 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                       onClick={() => setSidebarOpen(false)}
                     >
                       <Icon className="h-5 w-5 flex-shrink-0 opacity-90" />
-                      <span>{item.label}</span>
+                      <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                        <span className="truncate">{item.label}</span>
+                        {meta ? (
+                          <span
+                            className={[
+                              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                              meta.level === 'readonly'
+                                ? 'bg-slate-700/80 text-slate-100'
+                                : 'bg-slate-800 text-slate-400',
+                            ].join(' ')}
+                          >
+                            <meta.Icon className="h-3 w-3" />
+                            {meta.label}
+                          </span>
+                        ) : null}
+                      </div>
                     </Link>
                   );
                 })}

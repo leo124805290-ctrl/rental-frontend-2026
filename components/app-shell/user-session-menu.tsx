@@ -1,9 +1,16 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { removeAuthToken } from '@/lib/api-client';
+import {
+  endAuthSession,
+  getStoredAuthUser,
+  getStoredLastLoginAt,
+  getStoredSessionIdentity,
+  touchAuthSession,
+} from '@/lib/auth-user';
 import { LogOut, UserRound } from 'lucide-react';
 
 /**
@@ -12,19 +19,68 @@ import { LogOut, UserRound } from 'lucide-react';
  */
 export function UserSessionMenu() {
   const router = useRouter();
+  const pathname = usePathname();
   const [busy, setBusy] = useState(false);
+  const [currentUserLabel, setCurrentUserLabel] = useState('未登入');
+  const [currentUserMeta, setCurrentUserMeta] = useState('');
 
-  const goToLogin = () => {
+  useEffect(() => {
+    const sync = () => {
+      const user = getStoredAuthUser();
+      const session = getStoredSessionIdentity();
+      const lastLoginAt = getStoredLastLoginAt();
+      const label = user?.fullName || user?.username || user?.email || '未登入';
+      const meta = [
+        user?.role ? `角色：${user.role}` : '',
+        lastLoginAt ? `上次登入：${new Date(lastLoginAt).toLocaleString('zh-TW')}` : '',
+        session ? `Session：${session.sessionId.slice(0, 8)}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      setCurrentUserLabel(label);
+      setCurrentUserMeta(meta);
+    };
+
+    sync();
+    window.addEventListener('auth-user-changed', sync as EventListener);
+    return () => window.removeEventListener('auth-user-changed', sync as EventListener);
+  }, []);
+
+  useEffect(() => {
+    touchAuthSession(pathname);
+    const timer = window.setInterval(() => touchAuthSession(pathname), 60_000);
+    return () => window.clearInterval(timer);
+  }, [pathname]);
+
+  const goToLogin = (reason: 'logout' | 'switch_account') => {
+    endAuthSession(reason);
+    syncAuthHeaderDisplay();
     removeAuthToken();
     router.push('/login');
     router.refresh();
+  };
+
+  const syncAuthHeaderDisplay = () => {
+    const user = getStoredAuthUser();
+    const session = getStoredSessionIdentity();
+    const lastLoginAt = getStoredLastLoginAt();
+    const label = user?.fullName || user?.username || user?.email || '未登入';
+    const meta = [
+      user?.role ? `角色：${user.role}` : '',
+      lastLoginAt ? `上次登入：${new Date(lastLoginAt).toLocaleString('zh-TW')}` : '',
+      session ? `Session：${session.sessionId.slice(0, 8)}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    setCurrentUserLabel(label);
+    setCurrentUserMeta(meta);
   };
 
   const handleLogout = () => {
     if (!confirm('確定要登出嗎？')) return;
     setBusy(true);
     try {
-      goToLogin();
+      goToLogin('logout');
     } finally {
       setBusy(false);
     }
@@ -34,7 +90,7 @@ export function UserSessionMenu() {
     if (!confirm('將結束目前登入並前往登入頁，以便重新輸入密碼。確定？')) return;
     setBusy(true);
     try {
-      goToLogin();
+      goToLogin('switch_account');
     } finally {
       setBusy(false);
     }
@@ -42,6 +98,12 @@ export function UserSessionMenu() {
 
   return (
     <div className="flex items-center gap-2">
+      <div className="hidden max-w-[320px] flex-col text-right sm:flex">
+        <span className="truncate text-sm font-medium text-slate-800">{currentUserLabel}</span>
+        {currentUserMeta ? (
+          <span className="truncate text-xs text-slate-500">{currentUserMeta}</span>
+        ) : null}
+      </div>
       <Button
         type="button"
         variant="outline"

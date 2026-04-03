@@ -17,6 +17,18 @@ import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SETTINGS_KEYS, getSetting, setSetting } from '@/lib/settings';
+import {
+  getActiveUserSessions,
+  getAuthAuditRecords,
+  type ActiveUserSession,
+  type AuthAuditRecord,
+} from '@/lib/auth-user';
+import {
+  ALL_PAGE_ACCESS_OPTIONS,
+  PAGE_LABELS,
+  type AppPageKey,
+  type AccessLevel,
+} from '@/lib/page-access';
 
 // 使用者資料類型（與後端 User 類型對應）
 interface UserData {
@@ -41,6 +53,62 @@ interface UserFormData {
   password: string;
   confirmPassword: string;
   isActive: boolean;
+}
+
+type LocalPermissionMatrix = Record<AppPageKey, AccessLevel>;
+
+type LocalUserPermissionRecord = {
+  userId: string;
+  permissions: LocalPermissionMatrix;
+};
+
+const USER_PERMISSION_KEY = 'user_page_permissions';
+
+const DEFAULT_PERMISSION_BY_ROLE: Record<UserData['role'], LocalPermissionMatrix> = {
+  super_admin: {
+    dashboard: 'manage',
+    properties: 'manage',
+    rooms: 'manage',
+    'payment-details': 'manage',
+    deposits: 'manage',
+    checkout: 'manage',
+    finance: 'manage',
+    reports: 'manage',
+    'meter-history': 'manage',
+    users: 'manage',
+  },
+  admin: {
+    dashboard: 'manage',
+    properties: 'manage',
+    rooms: 'manage',
+    'payment-details': 'manage',
+    deposits: 'read_only',
+    checkout: 'manage',
+    finance: 'manage',
+    reports: 'read_only',
+    'meter-history': 'read_only',
+    users: 'hidden',
+  },
+};
+
+function readStoredPermissions(): LocalUserPermissionRecord[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(USER_PERMISSION_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as LocalUserPermissionRecord[];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredPermissions(records: LocalUserPermissionRecord[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(USER_PERMISSION_KEY, JSON.stringify(records));
+  } catch {
+    /* ignore */
+  }
 }
 
 export default function UsersPage() {
@@ -69,6 +137,9 @@ export default function UsersPage() {
   const [sysDailyDiv, setSysDailyDiv] = useState('30');
   const [sysOverdue, setSysOverdue] = useState('5');
   const [sysLaundry, setSysLaundry] = useState('50');
+  const [permissionRecords, setPermissionRecords] = useState<LocalUserPermissionRecord[]>([]);
+  const [auditRecords, setAuditRecords] = useState<AuthAuditRecord[]>([]);
+  const [activeSessions, setActiveSessions] = useState<ActiveUserSession[]>([]);
 
   useEffect(() => {
     setSysLandlord(getSetting(SETTINGS_KEYS.landlordName, '甲方'));
@@ -76,6 +147,9 @@ export default function UsersPage() {
     setSysDailyDiv(getSetting(SETTINGS_KEYS.dailyRentDivisor, '30'));
     setSysOverdue(getSetting(SETTINGS_KEYS.overdueGraceDays, '5'));
     setSysLaundry(getSetting(SETTINGS_KEYS.laundryFeeYuan, '50'));
+    setPermissionRecords(readStoredPermissions());
+    setAuditRecords(getAuthAuditRecords());
+    setActiveSessions(getActiveUserSessions());
   }, []);
 
   // 載入使用者資料
@@ -124,6 +198,29 @@ export default function UsersPage() {
   const totalAdmins = users.filter(u => u.role === 'admin').length;
   const totalActive = users.filter(u => u.isActive).length;
   const totalInactive = users.filter(u => !u.isActive).length;
+
+  const getPermissionMatrix = (user: UserData): LocalPermissionMatrix => {
+    const stored = permissionRecords.find((record) => record.userId === user.id);
+    return stored?.permissions ?? DEFAULT_PERMISSION_BY_ROLE[user.role];
+  };
+
+  const updatePermission = (userId: string, page: AppPageKey, access: AccessLevel) => {
+    setPermissionRecords((prev) => {
+      const user = users.find((item) => item.id === userId);
+      if (!user) return prev;
+      const existing = prev.find((record) => record.userId === userId);
+      const nextRecord: LocalUserPermissionRecord = {
+        userId,
+        permissions: {
+          ...(existing?.permissions ?? DEFAULT_PERMISSION_BY_ROLE[user.role]),
+          [page]: access,
+        },
+      };
+      const next = [...prev.filter((record) => record.userId !== userId), nextRecord];
+      writeStoredPermissions(next);
+      return next;
+    });
+  };
 
   // 新增使用者
   const handleAddUser = () => {
@@ -297,6 +394,8 @@ export default function UsersPage() {
       <Tabs defaultValue="accounts" className="w-full space-y-4">
         <TabsList>
           <TabsTrigger value="accounts">帳號管理</TabsTrigger>
+          <TabsTrigger value="permissions">分頁權限</TabsTrigger>
+          <TabsTrigger value="activity">登入紀錄 / 活躍</TabsTrigger>
           <TabsTrigger value="settings">系統設定</TabsTrigger>
         </TabsList>
 
@@ -512,6 +611,128 @@ export default function UsersPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="permissions" className="mt-4 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>分頁權限設定</CardTitle>
+              <CardDescription>
+                目前為前端權限模型：可控制分頁顯示、唯讀與可管理。後端 API 權限仍需另行實作才算完整安全。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {users.length === 0 ? (
+                <p className="text-sm text-muted-foreground">尚無使用者可設定權限</p>
+              ) : (
+                users.map((user) => {
+                  const permissions = getPermissionMatrix(user);
+                  return (
+                    <div key={user.id} className="space-y-4 rounded-lg border p-4">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-medium">{user.fullName || user.email}</p>
+                          <p className="text-sm text-muted-foreground">{user.email}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {getRoleBadge(user.role)}
+                          {getStatusBadge(user.isActive)}
+                        </div>
+                      </div>
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        {ALL_PAGE_ACCESS_OPTIONS.map((pageKey) => (
+                          <div key={pageKey} className="flex items-center justify-between gap-4 rounded-md border bg-slate-50 px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{PAGE_LABELS[pageKey]}</p>
+                              <p className="text-xs text-muted-foreground">
+                                hidden / read_only / manage
+                              </p>
+                            </div>
+                            <Select
+                              value={permissions[pageKey]}
+                              onValueChange={(value) =>
+                                updatePermission(user.id, pageKey, value as AccessLevel)
+                              }
+                            >
+                              <SelectTrigger className="w-[132px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="hidden">隱藏</SelectItem>
+                                <SelectItem value="read_only">唯讀</SelectItem>
+                                <SelectItem value="manage">可管理</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="activity" className="mt-4 space-y-6">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>目前活躍使用者</CardTitle>
+                <CardDescription>以本機 Session 心跳推估，預設 5 分鐘內視為活躍。</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {activeSessions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">目前沒有本機記錄到的活躍使用者。</p>
+                ) : (
+                  <div className="space-y-3">
+                    {activeSessions.map((session) => (
+                      <div key={session.sessionId} className="rounded-md border px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{session.fullName || session.username}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {session.role} · Session {session.sessionId.slice(0, 8)}
+                            </p>
+                          </div>
+                          <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">活躍中</Badge>
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          最近活動：{formatDate(session.lastSeenAt)} {session.currentPath ? `· ${session.currentPath}` : ''}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>登入紀錄</CardTitle>
+                <CardDescription>目前以前端本機審計記錄為主；完整後端登入歷史仍需 API 支援。</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {auditRecords.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">目前沒有本機登入紀錄。</p>
+                ) : (
+                  <div className="space-y-3">
+                    {auditRecords.slice(0, 20).map((record) => (
+                      <div key={record.id} className="rounded-md border px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-medium">{record.username}</p>
+                          <Badge variant="outline">{record.event}</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          角色：{record.role} · 時間：{formatDate(record.at)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="settings" className="mt-4">

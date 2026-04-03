@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { api, setAuthToken, ApiError } from '@/lib/api-client';
+import { startAuthSession } from '@/lib/auth-user';
 
 type LoginData = {
   user: {
@@ -55,6 +56,13 @@ export default function LoginPage() {
         throw new Error('登入回應缺少 token');
       }
       setAuthToken(jwt);
+      startAuthSession({
+        id: result.user.id,
+        username: result.user.username,
+        role: result.user.role,
+        ...(result.user.email ? { email: result.user.email } : {}),
+        ...(result.user.fullName ? { fullName: result.user.fullName } : {}),
+      });
       router.push('/dashboard');
       router.refresh();
     } catch (err) {
