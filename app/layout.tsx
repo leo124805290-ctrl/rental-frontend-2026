@@ -2,8 +2,9 @@
 
 import './globals.css';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState, type ReactNode } from 'react';
+import { filterVisibleNav, hasPageAccess } from '@/lib/permissions';
 import {
   LayoutDashboard,
   Building,
@@ -53,7 +54,17 @@ function pageTitleFromPath(pathname: string): string {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const visibleNavItems = navItems.filter((item) => filterVisibleNav(item.href));
+
+  useEffect(() => {
+    if (pathname === '/login') return;
+    if (!hasPageAccess(pathname)) {
+      router.replace('/dashboard');
+    }
+  }, [pathname, router]);
 
   const isActive = (href: string) => {
     if (href === '/dashboard' && pathname === '/') return true;
@@ -122,7 +133,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </div>
 
             <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-2 pb-4">
-              {navItems.map((item) => {
+              {visibleNavItems.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href);
 

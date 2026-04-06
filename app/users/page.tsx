@@ -16,7 +16,16 @@ import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { SETTINGS_KEYS, getSetting, setSetting } from '@/lib/settings';
+import { SETTINGS_KEYS, getSetting } from '@/lib/settings';
+import {
+  ROLE_DEFAULTS,
+  normalizePagePermissions,
+  savePermissions,
+  getSystemSettings,
+  saveSystemSettings,
+  type PagePermission,
+} from '@/lib/permissions';
+import { PermissionEditor } from './PermissionEditor';
 
 // 使用者資料類型（與後端 User 類型對應）
 interface UserData {
@@ -64,18 +73,34 @@ export default function UsersPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [sysLandlord, setSysLandlord] = useState('甲方');
-  const [sysElec, setSysElec] = useState('6');
+  const [sysLandlord, setSysLandlord] = useState('');
+  const [sysElec, setSysElec] = useState('6.0');
   const [sysDailyDiv, setSysDailyDiv] = useState('30');
   const [sysOverdue, setSysOverdue] = useState('5');
-  const [sysLaundry, setSysLaundry] = useState('50');
+  const [sysLaundry, setSysLaundry] = useState('');
+
+  const [dialogPerms, setDialogPerms] = useState<PagePermission[]>(() =>
+    normalizePagePermissions(ROLE_DEFAULTS.admin),
+  );
 
   useEffect(() => {
-    setSysLandlord(getSetting(SETTINGS_KEYS.landlordName, '甲方'));
-    setSysElec(getSetting(SETTINGS_KEYS.defaultElectricityYuan, '6'));
-    setSysDailyDiv(getSetting(SETTINGS_KEYS.dailyRentDivisor, '30'));
-    setSysOverdue(getSetting(SETTINGS_KEYS.overdueGraceDays, '5'));
-    setSysLaundry(getSetting(SETTINGS_KEYS.laundryFeeYuan, '50'));
+    if (typeof window === 'undefined') return;
+    if (!localStorage.getItem('system_settings')) {
+      const legacy = {
+        landlordDisplayName: getSetting(SETTINGS_KEYS.landlordName, ''),
+        defaultElectricityRate: Number(getSetting(SETTINGS_KEYS.defaultElectricityYuan, '6')) || 6.0,
+        dailyRentBase: Number(getSetting(SETTINGS_KEYS.dailyRentDivisor, '30')) || 30,
+        overdueDays: Number(getSetting(SETTINGS_KEYS.overdueGraceDays, '5')) || 5,
+        laundryFee: getSetting(SETTINGS_KEYS.laundryFeeYuan, ''),
+      };
+      saveSystemSettings(legacy);
+    }
+    const s = getSystemSettings();
+    setSysLandlord(s.landlordDisplayName ?? '');
+    setSysElec(String(s.defaultElectricityRate ?? 6.0));
+    setSysDailyDiv(String(s.dailyRentBase ?? 30));
+    setSysOverdue(String(s.overdueDays ?? 5));
+    setSysLaundry(s.laundryFee !== undefined && s.laundryFee !== null ? String(s.laundryFee) : '');
   }, []);
 
   // 載入使用者資料
@@ -137,6 +162,7 @@ export default function UsersPage() {
       confirmPassword: '',
       isActive: true,
     });
+    setDialogPerms(normalizePagePermissions(ROLE_DEFAULTS.admin));
     setShowDialog(true);
   };
 
@@ -152,6 +178,8 @@ export default function UsersPage() {
       confirmPassword: '',
       isActive: user.isActive,
     });
+    const defaults = ROLE_DEFAULTS[user.role] || ROLE_DEFAULTS.admin;
+    setDialogPerms(normalizePagePermissions(defaults));
     setShowDialog(true);
   };
 
@@ -221,6 +249,7 @@ export default function UsersPage() {
         const newUser = await api.post('/api/users', payload);
         setUsers(prev => [newUser, ...prev]);
       }
+      savePermissions(normalizePagePermissions(dialogPerms));
       setShowDialog(false);
     } catch (error) {
       console.error('儲存失敗', error);
@@ -537,43 +566,58 @@ export default function UsersPage() {
             <Card>
               <CardHeader>
                 <CardTitle>系統設定</CardTitle>
-                <CardDescription>合約與計價預設值（存於此瀏覽器 localStorage）</CardDescription>
+                <CardDescription>合約與計價預設值（僅儲存於本機瀏覽器）</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 max-w-lg">
                 <div className="space-y-2">
                   <Label>甲方名稱（合約用）</Label>
-                  <Input value={sysLandlord} onChange={(e) => setSysLandlord(e.target.value)} />
+                  <Input
+                    value={sysLandlord}
+                    onChange={(e) => setSysLandlord(e.target.value)}
+                    placeholder="王大明"
+                  />
+                  <p className="text-xs text-muted-foreground">用於電子合約上的出租人簽名</p>
                 </div>
                 <div className="space-y-2">
                   <Label>預設電費單價（元/度）</Label>
                   <Input value={sysElec} onChange={(e) => setSysElec(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">新建房間時的預設電費單價</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>日租金計算基數（天數）</Label>
+                  <Label>日租金計算基數（天）</Label>
                   <Input value={sysDailyDiv} onChange={(e) => setSysDailyDiv(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">月租金 ÷ 此數字 = 日租金</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>逾期警示天數（相對於當月幾號前）</Label>
+                  <Label>逾期警示天數</Label>
                   <Input value={sysOverdue} onChange={(e) => setSysOverdue(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">帳單超過幾天未收標記為逾期</p>
                 </div>
                 <div className="space-y-2">
                   <Label>洗衣機收費（元/次）</Label>
                   <Input value={sysLaundry} onChange={(e) => setSysLaundry(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">用於合約上的洗衣機收費金額</p>
                 </div>
                 <Button
                   type="button"
                   className="bg-blue-600 hover:bg-blue-700"
                   onClick={() => {
-                    setSetting(SETTINGS_KEYS.landlordName, sysLandlord);
-                    setSetting(SETTINGS_KEYS.defaultElectricityYuan, sysElec);
-                    setSetting(SETTINGS_KEYS.dailyRentDivisor, sysDailyDiv);
-                    setSetting(SETTINGS_KEYS.overdueGraceDays, sysOverdue);
-                    setSetting(SETTINGS_KEYS.laundryFeeYuan, sysLaundry);
+                    const defaultElectricityRate = Number.parseFloat(sysElec);
+                    const dailyRentBase = Number.parseInt(sysDailyDiv, 10);
+                    const overdueDays = Number.parseInt(sysOverdue, 10);
+                    saveSystemSettings({
+                      landlordDisplayName: sysLandlord,
+                      defaultElectricityRate: Number.isFinite(defaultElectricityRate) ? defaultElectricityRate : 6.0,
+                      dailyRentBase: Number.isFinite(dailyRentBase) ? dailyRentBase : 30,
+                      overdueDays: Number.isFinite(overdueDays) ? overdueDays : 5,
+                      laundryFee: sysLaundry,
+                    });
                     alert('已儲存');
                   }}
                 >
                   儲存設定
                 </Button>
+                <p className="text-xs text-amber-800">⚠ 系統設定僅儲存於本機瀏覽器</p>
               </CardContent>
             </Card>
           </TabsContent>
@@ -581,7 +625,7 @@ export default function UsersPage() {
 
       {/* 新增/編輯使用者對話框 */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingUser ? '編輯使用者' : '新增使用者'}
@@ -684,6 +728,8 @@ export default function UsersPage() {
                 </div>
               </div>
             )}
+
+            <PermissionEditor value={dialogPerms} onChange={setDialogPerms} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>
