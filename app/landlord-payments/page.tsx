@@ -307,19 +307,25 @@ export default function LandlordPaymentsPage() {
       setMarkSaving(false);
     }
 
-    const next = payments.map((x) =>
-      x.id === markPayment.id
-        ? {
-            ...x,
-            status: 'paid' as const,
-            paidDate: markForm.paidDate,
-            paidAmount: Number(markForm.paidAmount) || 0,
-            paymentMethod: markForm.paymentMethod,
-            notes: markForm.notes || undefined,
-            expenseSynced,
-          }
-        : x,
-    );
+    const next: LandlordPayment[] = payments.map((x): LandlordPayment => {
+      if (x.id !== markPayment.id) return x;
+      const { notes: _prevNotes, ...rest } = x;
+      const nt = markForm.notes.trim();
+      const updated: LandlordPayment = {
+        ...rest,
+        status: 'paid',
+        paidDate: markForm.paidDate,
+        paidAmount: Number(markForm.paidAmount) || 0,
+        paymentMethod: markForm.paymentMethod,
+      };
+      if (nt) {
+        updated.notes = nt;
+      }
+      if (typeof expenseSynced === 'boolean') {
+        updated.expenseSynced = expenseSynced;
+      }
+      return updated;
+    });
     savePayments(next);
     setPayments(next);
     setMarkOpen(false);
@@ -328,7 +334,10 @@ export default function LandlordPaymentsPage() {
 
   const remainingMonths = (endYmd: string) => {
     const t = new Date();
-    const [ey, em, ed] = endYmd.split('-').map(Number);
+    const parts = endYmd.split('-').map(Number);
+    const ey = parts[0] ?? 0;
+    const em = parts[1] ?? 1;
+    const ed = parts[2] ?? 1;
     const end = new Date(ey, em - 1, ed);
     const diff = end.getTime() - t.getTime();
     if (diff <= 0) return 0;
