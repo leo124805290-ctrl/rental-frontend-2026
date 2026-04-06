@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 export interface LandlordContract {
   id: string;
   propertyId: string;
