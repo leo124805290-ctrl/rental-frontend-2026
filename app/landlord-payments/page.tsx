@@ -46,7 +46,10 @@ function todayYmd(): string {
 }
 
 function addDaysYmd(ymd: string, days: number): string {
-  const [y, mo, d] = ymd.split('-').map(Number);
+  const parts = ymd.split('-').map(Number);
+  const y = parts[0] ?? 0;
+  const mo = parts[1] ?? 1;
+  const d = parts[2] ?? 1;
   const dt = new Date(y, mo - 1, d);
   dt.setDate(dt.getDate() + days);
   const yy = dt.getFullYear();
