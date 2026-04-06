@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo, useEffect, useState } from 'react';
+import { Suspense, useMemo, useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,7 @@ import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { PageShell } from '@/components/app-shell/page-shell';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { CheckoutSignature, type CheckoutSignatureSettlement } from './CheckoutSignature';
 
 interface TenantApi {
   id: string;
@@ -149,6 +150,15 @@ function CheckoutPageContent() {
   const [prepaidSumCents, setPrepaidSumCents] = useState<number | null>(null);
   const [financialLoading, setFinancialLoading] = useState(false);
   const [paymentLines, setPaymentLines] = useState<PaymentLineApi[]>([]);
+  const [showSignature, setShowSignature] = useState(false);
+  const [settlementData, setSettlementData] = useState<CheckoutSignatureSettlement | null>(null);
+  const signatureContextRef = useRef<{
+    tenantId: string;
+    tenantName: string;
+    propertyName: string;
+    roomNumber: string;
+    checkoutDate: string;
+  } | null>(null);
 
   // 載入租客 / 房間 / 物業
   useEffect(() => {
@@ -407,7 +417,18 @@ function CheckoutPageContent() {
       setSubmitting(true);
       setError(null);
 
-      await api.post('/api/checkout/complete', {
+      const data = await api.post<{
+        settlement: unknown;
+        summary: {
+          rentDueCents: number;
+          electricityFeeCents: number;
+          otherDeductionsCents: number;
+          totalDueCents: number;
+          depositAmountCents: number;
+          prepaidAmountCents: number;
+          refundAmountCents: number;
+        };
+      }>('/api/checkout/complete', {
         tenantId: selectedTenant.id,
         roomId: selectedRoom.id,
         checkoutDate: checkoutDateYmd,
@@ -416,6 +437,28 @@ function CheckoutPageContent() {
         notes: settlementNotes || undefined,
       });
 
+      const s = data.summary;
+      const settlementForSig: CheckoutSignatureSettlement = {
+        rentDue: s.rentDueCents,
+        electricityFee: s.electricityFeeCents,
+        unpaidBalance: unpaidBreakdown.total,
+        otherDeductions: s.otherDeductionsCents,
+        totalDue: s.totalDueCents,
+        depositAmount: s.depositAmountCents,
+        refundAmount: s.refundAmountCents,
+      };
+
+      signatureContextRef.current = {
+        tenantId: selectedTenant.id,
+        tenantName: selectedTenant.nameZh || selectedTenant.nameVi || '—',
+        propertyName: selectedPropertyName || '—',
+        roomNumber: selectedRoom.roomNumber,
+        checkoutDate: checkoutDateYmd,
+      };
+
+      setSettlementData(settlementForSig);
+      setShowSignature(true);
+
       setShowSettlementDialog(false);
       setSelectedTenantId('');
       setCheckoutDateYmd(localTodayYmd());
@@ -423,7 +466,6 @@ function CheckoutPageContent() {
       setOtherDeductionsYuan('0');
       setSettlementNotes('');
       await loadData();
-      alert('退租完成');
     } catch (err) {
       console.error('退租失敗', err);
       alert('退租失敗，請稍後再試');
@@ -820,6 +862,28 @@ function CheckoutPageContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {showSignature && settlementData && signatureContextRef.current && (
+        <CheckoutSignature
+          tenantId={signatureContextRef.current.tenantId}
+          tenantName={signatureContextRef.current.tenantName}
+          propertyName={signatureContextRef.current.propertyName}
+          roomNumber={signatureContextRef.current.roomNumber}
+          checkoutDate={signatureContextRef.current.checkoutDate}
+          settlement={settlementData}
+          onComplete={() => {
+            setShowSignature(false);
+            setSettlementData(null);
+            signatureContextRef.current = null;
+            void loadData();
+          }}
+          onCancel={() => {
+            setShowSignature(false);
+            setSettlementData(null);
+            signatureContextRef.current = null;
+          }}
+        />
+      )}
     </PageShell>
   );
 }
