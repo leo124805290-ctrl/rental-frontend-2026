@@ -47,17 +47,24 @@ interface ExtraIncome {
   description: string | null;
 }
 
-const EXPENSE_CATEGORIES: { value: string; label: string }[] = [
-  { value: '房東租金', label: '房東租金' },
-  { value: '台電電費', label: '台電電費' },
-  { value: '水費', label: '水費' },
-  { value: '網路', label: '網路' },
-  { value: '清潔', label: '清潔' },
-  { value: '裝潢', label: '裝潢' },
-  { value: '設備', label: '設備' },
-  { value: '維修', label: '維修' },
-  { value: '其他', label: '其他' },
+/** 存後端為英文 code，畫面顯示中文 */
+const EXPENSE_CATEGORY_OPTIONS: { value: string; label: string }[] = [
+  { value: 'landlord_rent', label: '房東租金' },
+  { value: 'utility_electric', label: '台電電費' },
+  { value: 'utility_water', label: '水費' },
+  { value: 'internet', label: '網路' },
+  { value: 'cleaning', label: '清潔' },
+  { value: 'renovation', label: '裝潢' },
+  { value: 'equipment', label: '設備' },
+  { value: 'repair', label: '維修' },
+  { value: 'other', label: '其他' },
 ];
+
+function expenseCategoryLabel(code: string): string {
+  const hit = EXPENSE_CATEGORY_OPTIONS.find((o) => o.value === code);
+  if (hit) return hit.label;
+  return code;
+}
 
 const INCOME_SOURCES: { value: string; label: string }[] = [
   { value: 'laundry', label: '洗衣機' },
@@ -77,7 +84,7 @@ export default function FinancePage() {
   const [expForm, setExpForm] = useState({
     propertyId: '',
     type: 'fixed' as 'fixed' | 'capital',
-    category: '房東租金',
+    category: 'landlord_rent',
     amountYuan: 0,
     expenseDate: new Date().toISOString().split('T')[0] ?? '',
     description: '',
@@ -98,10 +105,14 @@ export default function FinancePage() {
     setLoading(true);
     setError(null);
     try {
+      const incomeUrl =
+        propertyId === 'all'
+          ? '/api/incomes'
+          : `/api/incomes?propertyId=${encodeURIComponent(propertyId)}`;
       const [p, e, i] = await Promise.all([
         api.get<Array<{ id: string; name: string }>>('/api/properties'),
         api.get<Expense[]>('/api/expenses'),
-        api.get<ExtraIncome[]>('/api/incomes'),
+        api.get<ExtraIncome[]>(incomeUrl),
       ]);
       setProperties(p);
       setExpenses(e);
@@ -111,7 +122,7 @@ export default function FinancePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [propertyId]);
 
   useEffect(() => {
     void loadAll();
@@ -278,19 +289,30 @@ export default function FinancePage() {
                         <TableCell>{formatDate(row.expenseDate, 'short')}</TableCell>
                         <TableCell>{propName(row.propertyId)}</TableCell>
                         <TableCell>{row.type === 'fixed' ? '固定支出' : '資本支出'}</TableCell>
-                        <TableCell>{row.category}</TableCell>
+                        <TableCell>{expenseCategoryLabel(row.category)}</TableCell>
                         <TableCell className="text-right">{formatCents(row.amount)}</TableCell>
                         <TableCell className="max-w-[200px] truncate">{row.description ?? '—'}</TableCell>
                         <TableCell>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-600"
-                            onClick={() => void handleDeleteExpense(row.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {(() => {
+                            const auto =
+                              (row.description ?? '').includes('[AUTO:landlord_payment:');
+                            return (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 disabled:opacity-50"
+                                disabled={auto}
+                                title={auto ? '自動產生的紀錄不可刪除' : undefined}
+                                onClick={() => {
+                                  if (auto) return;
+                                  void handleDeleteExpense(row.id);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            );
+                          })()}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -417,7 +439,7 @@ export default function FinancePage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {EXPENSE_CATEGORIES.map((c) => (
+                  {EXPENSE_CATEGORY_OPTIONS.map((c) => (
                     <SelectItem key={c.value} value={c.value}>
                       {c.label}
                     </SelectItem>
