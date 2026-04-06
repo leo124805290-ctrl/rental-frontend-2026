@@ -16,6 +16,7 @@ import {
   Menu,
   History,
   DoorOpen,
+  Landmark,
 } from 'lucide-react';
 import { UserSessionMenu } from '@/components/app-shell/user-session-menu';
 
@@ -30,6 +31,7 @@ const navItems = [
   { href: '/reports', label: '損益報表', icon: BarChart3 },
   { href: '/meter-history', label: '電錶歷史', icon: Gauge },
   { href: '/users', label: '使用者管理', icon: UserCog },
+  { href: '/landlord-payments', label: '房東付款', icon: Landmark },
 ];
 
 function pageTitleFromPath(pathname: string): string {
@@ -44,6 +46,7 @@ function pageTitleFromPath(pathname: string): string {
   if (pathname === '/reports') return '損益報表';
   if (pathname === '/meter-history') return '電錶歷史';
   if (pathname === '/users') return '使用者管理';
+  if (pathname === '/landlord-payments') return '房東付款管理';
   if (pathname === '/login') return '登入';
   return '租屋管理系統';
 }
