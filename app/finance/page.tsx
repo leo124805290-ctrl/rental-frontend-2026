@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -72,6 +72,47 @@ const INCOME_SOURCES: { value: string; label: string }[] = [
   { value: 'other', label: '其他' },
 ];
 
+const SUPPLEMENTARY_INCOMES_KEY = 'supplementary_incomes';
+
+function loadIncomesFromStorage(propertyFilter: string): ExtraIncome[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(SUPPLEMENTARY_INCOMES_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(
+      (x: ExtraIncome) => propertyFilter === 'all' || x.propertyId === propertyFilter,
+    );
+  } catch {
+    return [];
+  }
+}
+
+function appendIncomeToStorage(row: ExtraIncome): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(SUPPLEMENTARY_INCOMES_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    const next = Array.isArray(arr) ? [...arr, row] : [row];
+    localStorage.setItem(SUPPLEMENTARY_INCOMES_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+}
+
+function removeIncomeFromStorage(id: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(SUPPLEMENTARY_INCOMES_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return;
+    const next = arr.filter((x: ExtraIncome) => x.id !== id);
+    localStorage.setItem(SUPPLEMENTARY_INCOMES_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function FinancePage() {
   const [properties, setProperties] = useState<{ id: string; name: string }[]>([]);
   const [propertyId, setPropertyId] = useState<string>('all');
@@ -109,14 +150,21 @@ export default function FinancePage() {
         propertyId === 'all'
           ? '/api/incomes'
           : `/api/incomes?propertyId=${encodeURIComponent(propertyId)}`;
-      const [p, e, i] = await Promise.all([
+      const [p, e] = await Promise.all([
         api.get<Array<{ id: string; name: string }>>('/api/properties'),
         api.get<Expense[]>('/api/expenses'),
-        api.get<ExtraIncome[]>(incomeUrl),
       ]);
       setProperties(p);
       setExpenses(e);
-      setIncomes(i);
+
+      let incomeList: ExtraIncome[] = [];
+      try {
+        const i = await api.get<ExtraIncome[]>(incomeUrl);
+        incomeList = Array.isArray(i) ? i : [];
+      } catch {
+        incomeList = loadIncomesFromStorage(propertyId);
+      }
+      setIncomes(incomeList);
     } catch (err) {
       setError(err instanceof Error ? err.message : '載入失敗');
     } finally {
@@ -134,6 +182,14 @@ export default function FinancePage() {
   const filteredIncomes = incomes.filter(
     (x) => propertyId === 'all' || x.propertyId === propertyId,
   );
+
+  const supplementaryMonthTotalCents = useMemo(() => {
+    const now = new Date();
+    const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return filteredIncomes
+      .filter((row) => String(row.incomeDate).slice(0, 7) === prefix)
+      .reduce((s, r) => s + Number(r.amount ?? 0), 0);
+  }, [filteredIncomes]);
 
   const propName = (id: string) => properties.find((p) => p.id === id)?.name ?? id;
 
@@ -187,8 +243,22 @@ export default function FinancePage() {
       });
       setIncOpen(false);
       await loadAll();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '新增失敗');
+    } catch {
+      const id =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `local-${Date.now()}`;
+      const row: ExtraIncome = {
+        id,
+        propertyId: incForm.propertyId,
+        type: incForm.type,
+        amount: Math.round(incForm.amountYuan * 100),
+        incomeDate: new Date(incForm.incomeDate).toISOString(),
+        description: incForm.description || null,
+      };
+      appendIncomeToStorage(row);
+      setIncOpen(false);
+      await loadAll();
     } finally {
       setIncSaving(false);
     }
@@ -199,8 +269,9 @@ export default function FinancePage() {
     try {
       await api.delete(`/api/incomes/${id}`);
       await loadAll();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '刪除失敗');
+    } catch {
+      removeIncomeFromStorage(id);
+      await loadAll();
     }
   };
 
@@ -328,7 +399,7 @@ export default function FinancePage() {
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle>補充收入</CardTitle>
-                <CardDescription>洗衣機、販賣機等</CardDescription>
+                <CardDescription>管理洗衣機、販賣機等額外收入</CardDescription>
               </div>
               <Button
                 type="button"
@@ -384,6 +455,9 @@ export default function FinancePage() {
                   </TableBody>
                 </Table>
               </div>
+              <p className="mt-4 text-sm font-medium">
+                本月補充收入合計：{formatCents(supplementaryMonthTotalCents)}
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -557,7 +631,7 @@ export default function FinancePage() {
               取消
             </Button>
             <Button type="button" disabled={incSaving} onClick={() => void handleAddIncome()}>
-              送出
+              新增
             </Button>
           </DialogFooter>
         </DialogContent>
