@@ -72,17 +72,33 @@ interface Property {
   name: string;
 }
 
-/** 電費帳單列（僅 lineType=electricity） */
-interface ElectricityPaymentRow {
-  totalAmount: number;
-  paidAmount: number;
+/** 電費差異分析（本月） */
+interface ElectricityAnalysisState {
+  lines: Array<{ roomLabel: string; usage: number; rateYuan: number; amountCents: number }>;
+  totalCollectedCents: number;
+  taipowerCents: number;
+  profitCents: number;
+  avgCostPerDeg: number | null;
+  collectRatePerDeg: number | null;
+  profitPerDeg: number | null;
+  hasElectricityLines: boolean;
+  hasTaipowerExpense: boolean;
 }
 
-/** 月報表頁「電費差異分析」用 */
-interface ElectricityDiff {
-  elecBilledCents: number;
-  elecCollectedCents: number;
-  utilityExpenseCents: number;
+interface DepositStatusState {
+  landlordDepositYuan: number;
+  tenantEscrowCents: number;
+}
+
+function expenseMonthMatches(iso: string, ym: string): boolean {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` === ym;
+}
+
+function isTaipowerExpenseCategory(cat: string): boolean {
+  const c = String(cat);
+  return c === 'utility_electric' || c === 'utilities' || c.includes('台電');
 }
 
 export default function ReportsPage() {
@@ -96,7 +112,8 @@ export default function ReportsPage() {
   const [selectedProperty, setSelectedProperty] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [properties, setProperties] = useState<Property[]>([]);
-  const [electricityDiff, setElectricityDiff] = useState<ElectricityDiff | null>(null);
+  const [electricityAnalysis, setElectricityAnalysis] = useState<ElectricityAnalysisState | null>(null);
+  const [depositStatus, setDepositStatus] = useState<DepositStatusState | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -113,7 +130,8 @@ export default function ReportsPage() {
   const loadMonthlyReport = useCallback(async () => {
     if (!selectedProperty) {
       setMonthlyReport(null);
-      setElectricityDiff(null);
+      setElectricityAnalysis(null);
+      setDepositStatus(null);
       return;
     }
 
@@ -121,37 +139,105 @@ export default function ReportsPage() {
     setError(null);
 
     try {
-      const [data, elecRows] = await Promise.all([
+      const [data, payList, roomList, expList, depAll] = await Promise.all([
         api.get<MonthlyReport>(`/api/reports/monthly?propertyId=${selectedProperty}&month=${selectedMonth}`),
         api
-          .get<ElectricityPaymentRow[]>(
-            `/api/payments?propertyId=${encodeURIComponent(selectedProperty)}&month=${encodeURIComponent(selectedMonth)}&lineType=electricity`,
+          .get<unknown[]>(
+            `/api/payments?propertyId=${encodeURIComponent(selectedProperty)}&month=${encodeURIComponent(selectedMonth)}`,
           )
-          .catch(() => [] as ElectricityPaymentRow[]),
+          .catch(() => [] as unknown[]),
+        api
+          .get<Array<{ id: string; roomNumber: string; electricityRate?: number }>>(
+            `/api/rooms?propertyId=${encodeURIComponent(selectedProperty)}`,
+          )
+          .catch(() => []),
+        api
+          .get<Array<{ amount: number; expenseDate: string; category: string }>>(
+            `/api/expenses?propertyId=${encodeURIComponent(selectedProperty)}`,
+          )
+          .catch(() => []),
+        api.get<Array<{ roomId: string; amount: number; type: string }>>('/api/deposits').catch(() => []),
       ]);
       setMonthlyReport(data);
 
-      const elecBilledCents = (Array.isArray(elecRows) ? elecRows : []).reduce(
-        (s, p) => s + Number(p.totalAmount || 0),
-        0,
-      );
-      const elecCollectedCents = (Array.isArray(elecRows) ? elecRows : []).reduce(
-        (s, p) => s + Number(p.paidAmount || 0),
-        0,
-      );
-      const utilityExpenseCents = (data.expense?.breakdown ?? [])
-        .filter((e) => e.category === 'utilities')
-        .reduce((s, e) => s + Number(e.amount || 0), 0);
+      const roomsMap = new Map((Array.isArray(roomList) ? roomList : []).map((r) => [r.id, r]));
+      const roomIdSet = new Set((Array.isArray(roomList) ? roomList : []).map((r) => r.id));
 
-      setElectricityDiff({
-        elecBilledCents,
-        elecCollectedCents,
-        utilityExpenseCents,
+      const lines: ElectricityAnalysisState['lines'] = [];
+      let totalCollectedCents = 0;
+
+      for (const raw of Array.isArray(payList) ? payList : []) {
+        const p = raw as Record<string, unknown>;
+        const lt = String(p['lineType'] ?? p['line_type'] ?? '');
+        if (lt !== 'electricity') continue;
+        const roomId = String(p['roomId'] ?? p['room_id'] ?? '');
+        const paid = Number(p['paidAmount'] ?? p['paid_amount'] ?? 0);
+        totalCollectedCents += paid;
+        const room = roomsMap.get(roomId);
+        const rn = room?.roomNumber ?? '—';
+        const roomLabel = `${rn}房`;
+        const rateFen = Number(room?.electricityRate ?? 0);
+        const rateYuan = rateFen / 100;
+        const usage = rateFen > 0 ? Math.round(paid / rateFen) : 0;
+        lines.push({ roomLabel, usage, rateYuan, amountCents: paid });
+      }
+
+      let taipowerCents = 0;
+      for (const e of Array.isArray(expList) ? expList : []) {
+        if (!expenseMonthMatches(String(e.expenseDate), selectedMonth)) continue;
+        if (!isTaipowerExpenseCategory(String(e.category))) continue;
+        taipowerCents += Number(e.amount ?? 0);
+      }
+
+      const profitCents = totalCollectedCents - taipowerCents;
+      const totalUsage = lines.reduce((s, l) => s + l.usage, 0);
+      const collectedYuan = totalCollectedCents / 100;
+      const taipowerYuan = taipowerCents / 100;
+      const profitYuan = profitCents / 100;
+
+      setElectricityAnalysis({
+        lines,
+        totalCollectedCents,
+        taipowerCents,
+        profitCents,
+        avgCostPerDeg: totalUsage > 0 ? taipowerYuan / totalUsage : null,
+        collectRatePerDeg: totalUsage > 0 ? collectedYuan / totalUsage : null,
+        profitPerDeg: totalUsage > 0 ? profitYuan / totalUsage : null,
+        hasElectricityLines: lines.length > 0,
+        hasTaipowerExpense: taipowerCents > 0,
+      });
+
+      let landlordDepositYuan = 0;
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('landlord_contracts');
+          const arr = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(arr)) {
+            landlordDepositYuan = arr
+              .filter((c: { propertyId?: string }) => c.propertyId === selectedProperty)
+              .reduce((s: number, c: { depositAmount?: number }) => s + Number(c.depositAmount ?? 0), 0);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      let tenantEscrowCents = 0;
+      for (const d of Array.isArray(depAll) ? depAll : []) {
+        if (d.type !== '收取') continue;
+        if (!roomIdSet.has(String(d.roomId))) continue;
+        tenantEscrowCents += Number(d.amount ?? 0);
+      }
+
+      setDepositStatus({
+        landlordDepositYuan,
+        tenantEscrowCents,
       });
     } catch (error) {
       console.error(error);
       setMonthlyReport(null);
-      setElectricityDiff(null);
+      setElectricityAnalysis(null);
+      setDepositStatus(null);
       setError(error instanceof Error ? error.message : '載入月報表失敗');
     } finally {
       setIsLoading(false);
@@ -390,55 +476,6 @@ export default function ReportsPage() {
                   </Card>
                 </div>
 
-                {/* 電費差異分析（與 payments utilities 支出對照） */}
-                {electricityDiff && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>電費差異分析</CardTitle>
-                      <CardDescription>
-                        租客電費為該月、該物業之電費帳單列（應收／實收）；台電等支出為同月支出明細中「utilities」類別合計，區間與上方月報表一致。
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {electricityDiff.elecBilledCents === 0 &&
-                      electricityDiff.elecCollectedCents === 0 &&
-                      electricityDiff.utilityExpenseCents === 0 ? (
-                        <p className="text-sm text-muted-foreground">尚無該月電費帳單或 utilities 支出資料</p>
-                      ) : (
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                          <div className="rounded-lg border bg-muted/40 p-4">
-                            <p className="text-sm text-muted-foreground">租客電費應收（帳單）</p>
-                            <p className="text-xl font-semibold">{formatCents(electricityDiff.elecBilledCents)}</p>
-                          </div>
-                          <div className="rounded-lg border bg-muted/40 p-4">
-                            <p className="text-sm text-muted-foreground">租客電費實收</p>
-                            <p className="text-xl font-semibold text-green-700">
-                              {formatCents(electricityDiff.elecCollectedCents)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border bg-muted/40 p-4">
-                            <p className="text-sm text-muted-foreground">utilities 支出（台電等）</p>
-                            <p className="text-xl font-semibold text-red-700">
-                              {formatCents(electricityDiff.utilityExpenseCents)}
-                            </p>
-                          </div>
-                          <div className="rounded-lg border bg-primary/10 p-4">
-                            <p className="text-sm text-muted-foreground">差異（實收 − utilities 支出）</p>
-                            <p className="text-xl font-semibold">
-                              {formatCents(
-                                electricityDiff.elecCollectedCents - electricityDiff.utilityExpenseCents,
-                              )}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              正值表示向租客收取的電費高於同期繳付台電／水電帳單
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-
                 {/* 圖表區 */}
                 <div className="grid gap-6 lg:grid-cols-2">
                   {/* 收入組成圖 */}
@@ -630,6 +667,91 @@ export default function ReportsPage() {
                     </CardContent>
                   </Card>
                 </div>
+
+                {electricityAnalysis && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>═══ 電費差異分析（本月）═══</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      {!electricityAnalysis.hasElectricityLines && (
+                        <p className="text-muted-foreground">尚無電費資料</p>
+                      )}
+                      {electricityAnalysis.lines.map((l, idx) => (
+                        <p key={`${l.roomLabel}-${idx}`}>
+                          {l.roomLabel}：{l.usage}度 × ${l.rateYuan.toFixed(1)} ={' '}
+                          {formatCurrency(l.amountCents / 100)}
+                        </p>
+                      ))}
+                      {electricityAnalysis.hasElectricityLines && (
+                        <>
+                          <p className="font-medium">
+                            合計：{formatCurrency(electricityAnalysis.totalCollectedCents / 100)}
+                          </p>
+                          <p>
+                            實繳台電：{' '}
+                            {electricityAnalysis.hasTaipowerExpense ? (
+                              formatCurrency(electricityAnalysis.taipowerCents / 100)
+                            ) : (
+                              <span className="text-amber-800">尚未登記台電電費支出</span>
+                            )}
+                          </p>
+                          <p>
+                            電費利潤：{formatCurrency(electricityAnalysis.profitCents / 100)}{' '}
+                            {electricityAnalysis.profitCents >= 0 ? '✅' : '⚠'}
+                          </p>
+                          <p>
+                            平均每度成本：
+                            {electricityAnalysis.avgCostPerDeg != null
+                              ? `$${electricityAnalysis.avgCostPerDeg.toFixed(2)}/度`
+                              : '—'}
+                          </p>
+                          <p>
+                            收取單價：
+                            {electricityAnalysis.collectRatePerDeg != null
+                              ? `$${electricityAnalysis.collectRatePerDeg.toFixed(2)}/度`
+                              : '—'}
+                          </p>
+                          <p>
+                            每度利潤：
+                            {electricityAnalysis.profitPerDeg != null
+                              ? `$${electricityAnalysis.profitPerDeg.toFixed(2)}/度`
+                              : '—'}
+                          </p>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {depositStatus && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>═══ 押金狀態 ═══</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <p>
+                        付給房東的押金：
+                        {depositStatus.landlordDepositYuan > 0 ? (
+                          formatCurrency(depositStatus.landlordDepositYuan)
+                        ) : (
+                          <span className="text-muted-foreground">尚未設定</span>
+                        )}
+                      </p>
+                      <p>
+                        租客押金代管中：
+                        {depositStatus.tenantEscrowCents > 0 ? (
+                          formatCurrency(depositStatus.tenantEscrowCents / 100)
+                        ) : (
+                          <span className="text-muted-foreground">尚未設定</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        ※ 押金為代收代付，不計入收支
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
               </>
             ) : (
               <Card>
