@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -507,7 +508,14 @@ export default function HistoryDetailPage() {
               {checkinSig && (
                 <div>
                   <p className="text-sm font-medium mb-2">簽名</p>
-                  <img src={checkinSig} alt="簽名" className="max-h-40 border rounded" />
+                  <Image
+                    src={checkinSig}
+                    alt="簽名"
+                    width={800}
+                    height={240}
+                    unoptimized
+                    className="max-h-40 w-auto border rounded"
+                  />
                 </div>
               )}
               <Button type="button" variant="outline" onClick={handlePrint}>
@@ -533,10 +541,13 @@ export default function HistoryDetailPage() {
               {typeof checkoutBody['signatureBase64'] === 'string' && (
                 <div>
                   <p className="text-sm font-medium mb-2">簽名</p>
-                  <img
+                  <Image
                     src={checkoutBody['signatureBase64'] as string}
                     alt="簽名"
-                    className="max-h-40 border rounded"
+                    width={800}
+                    height={240}
+                    unoptimized
+                    className="max-h-40 w-auto border rounded"
                   />
                 </div>
               )}

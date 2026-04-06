@@ -57,4 +57,4 @@ export const zhTW = {
   common: {
     footerVersion: 'v2.0 • 台灣房東租屋管理',
   },
-} as const;
+};
