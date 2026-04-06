@@ -90,6 +90,24 @@ interface DepositStatusState {
   tenantEscrowCents: number;
 }
 
+/** 投報率分析（前端計算） */
+interface RoiAnalysisState {
+  hasLandlordContractForProperty: boolean;
+  landlordDepositYuan: number;
+  renovationCents: number;
+  equipmentCents: number;
+  currentMonthNetCents: number;
+  avg3MonthNetCents: number;
+}
+
+function addMonthsYm(ym: string, delta: number): string {
+  const parts = ym.split('-').map(Number);
+  const y = parts[0] ?? new Date().getFullYear();
+  const mo = parts[1] ?? 1;
+  const d = new Date(y, mo - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 function expenseMonthMatches(iso: string, ym: string): boolean {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return false;
@@ -99,6 +117,71 @@ function expenseMonthMatches(iso: string, ym: string): boolean {
 function isTaipowerExpenseCategory(cat: string): boolean {
   const c = String(cat);
   return c === 'utility_electric' || c === 'utilities' || c.includes('台電');
+}
+
+function RoiAnalysisCard({ roi }: { roi: RoiAnalysisState }) {
+  const renovationYuan = roi.renovationCents / 100;
+  const equipmentYuan = roi.equipmentCents / 100;
+  const totalInvestmentYuan = roi.landlordDepositYuan + renovationYuan + equipmentYuan;
+  const monthlyNetYuan = roi.currentMonthNetCents / 100;
+  const avg3Yuan = roi.avg3MonthNetCents / 100;
+  const annualProfitYuan = avg3Yuan * 12;
+  const roiPct =
+    totalInvestmentYuan > 0 ? (annualProfitYuan / totalInvestmentYuan) * 100 : 0;
+  const roiStr = totalInvestmentYuan > 0 ? roiPct.toFixed(1) : '0.0';
+  const paybackYears =
+    annualProfitYuan > 0 ? (totalInvestmentYuan / annualProfitYuan).toFixed(1) : '∞';
+
+  let roiEmoji = '🔴';
+  let roiColor = 'text-red-600';
+  if (roiPct > 30) {
+    roiEmoji = '✅';
+    roiColor = 'text-green-600';
+  } else if (roiPct >= 10) {
+    roiEmoji = '⚠️';
+    roiColor = 'text-amber-600';
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>═══ 投報率分析 ═══</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        {!roi.hasLandlordContractForProperty && (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+            總投入成本：請先到房東付款頁面設定合約
+          </p>
+        )}
+
+        <div>
+          <p className="font-semibold mb-2">【總投入成本】</p>
+          <p>房東押金：{formatCurrency(roi.landlordDepositYuan)}</p>
+          <p>裝潢費用：{formatCurrency(renovationYuan)}（從收支管理「裝潢」類別累計）</p>
+          <p>設備費用：{formatCurrency(equipmentYuan)}（從收支管理「設備」類別累計）</p>
+          <p className="border-t my-2 pt-2 font-medium">投入合計：{formatCurrency(totalInvestmentYuan)}</p>
+        </div>
+
+        <div>
+          <p className="font-semibold mb-2">【年度收益】</p>
+          <p>本月淨利：{formatCurrency(monthlyNetYuan)}</p>
+          <p>月均淨利（近3月）：{formatCurrency(avg3Yuan)}</p>
+          <p>年化淨利：{formatCurrency(annualProfitYuan)}（月均 × 12）</p>
+        </div>
+
+        <div>
+          <p className="font-semibold mb-2">【投報率指標】</p>
+          <p className={roiColor}>
+            年投報率：{roiStr}% {roiEmoji}
+          </p>
+          <p>預估回本期：{paybackYears} 年</p>
+          <p className="text-xs text-muted-foreground mt-2">
+            投報率 &gt; 30% 顯示 ✅ 綠色；10–30% 顯示 ⚠️ 黃色；&lt; 10% 顯示 🔴 紅色
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function ReportsPage() {
@@ -114,6 +197,7 @@ export default function ReportsPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [electricityAnalysis, setElectricityAnalysis] = useState<ElectricityAnalysisState | null>(null);
   const [depositStatus, setDepositStatus] = useState<DepositStatusState | null>(null);
+  const [roiAnalysis, setRoiAnalysis] = useState<RoiAnalysisState | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -132,6 +216,7 @@ export default function ReportsPage() {
       setMonthlyReport(null);
       setElectricityAnalysis(null);
       setDepositStatus(null);
+      setRoiAnalysis(null);
       return;
     }
 
@@ -159,6 +244,33 @@ export default function ReportsPage() {
         api.get<Array<{ roomId: string; amount: number; type: string }>>('/api/deposits').catch(() => []),
       ]);
       setMonthlyReport(data);
+
+      let renovationCents = 0;
+      let equipmentCents = 0;
+      for (const e of Array.isArray(expList) ? expList : []) {
+        const cat = String(e.category ?? '');
+        const amt = Number(e.amount ?? 0);
+        if (cat === 'renovation') renovationCents += amt;
+        if (cat === 'equipment') equipmentCents += amt;
+      }
+
+      const [rPrev1, rPrev2] = await Promise.all([
+        api
+          .get<MonthlyReport>(
+            `/api/reports/monthly?propertyId=${encodeURIComponent(selectedProperty)}&month=${encodeURIComponent(addMonthsYm(selectedMonth, -1))}`,
+          )
+          .catch(() => null),
+        api
+          .get<MonthlyReport>(
+            `/api/reports/monthly?propertyId=${encodeURIComponent(selectedProperty)}&month=${encodeURIComponent(addMonthsYm(selectedMonth, -2))}`,
+          )
+          .catch(() => null),
+      ]);
+      const netsForAvg: number[] = [data.netProfit];
+      if (rPrev1) netsForAvg.push(rPrev1.netProfit);
+      if (rPrev2) netsForAvg.push(rPrev2.netProfit);
+      const avg3MonthNetCents =
+        netsForAvg.reduce((a, b) => a + b, 0) / (netsForAvg.length > 0 ? netsForAvg.length : 1);
 
       const roomsMap = new Map((Array.isArray(roomList) ? roomList : []).map((r) => [r.id, r]));
       const roomIdSet = new Set((Array.isArray(roomList) ? roomList : []).map((r) => r.id));
@@ -208,19 +320,32 @@ export default function ReportsPage() {
       });
 
       let landlordDepositYuan = 0;
+      let hasLandlordContractForProperty = false;
       if (typeof window !== 'undefined') {
         try {
           const raw = localStorage.getItem('landlord_contracts');
           const arr = raw ? JSON.parse(raw) : [];
           if (Array.isArray(arr)) {
-            landlordDepositYuan = arr
-              .filter((c: { propertyId?: string }) => c.propertyId === selectedProperty)
-              .reduce((s: number, c: { depositAmount?: number }) => s + Number(c.depositAmount ?? 0), 0);
+            const forProp = arr.filter((c: { propertyId?: string }) => c.propertyId === selectedProperty);
+            hasLandlordContractForProperty = forProp.length > 0;
+            landlordDepositYuan = forProp.reduce(
+              (s: number, c: { depositAmount?: number }) => s + Number(c.depositAmount ?? 0),
+              0,
+            );
           }
         } catch {
           /* ignore */
         }
       }
+
+      setRoiAnalysis({
+        hasLandlordContractForProperty,
+        landlordDepositYuan,
+        renovationCents,
+        equipmentCents,
+        currentMonthNetCents: data.netProfit,
+        avg3MonthNetCents,
+      });
 
       let tenantEscrowCents = 0;
       for (const d of Array.isArray(depAll) ? depAll : []) {
@@ -238,6 +363,7 @@ export default function ReportsPage() {
       setMonthlyReport(null);
       setElectricityAnalysis(null);
       setDepositStatus(null);
+      setRoiAnalysis(null);
       setError(error instanceof Error ? error.message : '載入月報表失敗');
     } finally {
       setIsLoading(false);
@@ -751,6 +877,10 @@ export default function ReportsPage() {
                       </p>
                     </CardContent>
                   </Card>
+                )}
+
+                {roiAnalysis && monthlyReport && (
+                  <RoiAnalysisCard roi={roiAnalysis} />
                 )}
               </>
             ) : (
