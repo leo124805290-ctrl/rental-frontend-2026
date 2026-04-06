@@ -62,8 +62,11 @@ export function savePayments(payments: LandlordPayment[]): void {
 }
 
 function parseYmd(s: string): Date {
-  const [y, m, d] = s.split('-').map((x) => Number(x));
-  return new Date(y, (m || 1) - 1, d || 1);
+  const parts = s.split('-').map((x) => Number(x));
+  const y = parts[0] ?? 2026;
+  const m = parts[1] ?? 1;
+  const d = parts[2] ?? 1;
+  return new Date(y, m - 1, d);
 }
 
 function toYmd(d: Date): string {

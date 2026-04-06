@@ -309,7 +309,8 @@ export default function LandlordPaymentsPage() {
 
     const next: LandlordPayment[] = payments.map((x): LandlordPayment => {
       if (x.id !== markPayment.id) return x;
-      const { notes: _prevNotes, ...rest } = x;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 解構僅為排除舊 notes
+      const { notes, ...rest } = x;
       const nt = markForm.notes.trim();
       const updated: LandlordPayment = {
         ...rest,
