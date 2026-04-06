@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Building2, Home, Percent, Wallet } from 'lucide-react';
-import { formatCents } from '@/lib/utils';
+import { AlertTriangle, Building2, CalendarClock, Home, Percent, Wallet } from 'lucide-react';
+import { formatCents, formatCurrency } from '@/lib/utils';
 import { PageShell } from '@/components/app-shell/page-shell';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { api } from '@/lib/api-client';
@@ -90,6 +90,42 @@ const LINE_LABEL: Record<string, string> = {
   deposit: '押金',
 };
 
+function todayYmdLocal(): string {
+  const n = new Date();
+  const y = n.getFullYear();
+  const m = String(n.getMonth() + 1).padStart(2, '0');
+  const d = String(n.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function addDaysYmdLocal(ymd: string, days: number): string {
+  const parts = ymd.split('-').map(Number);
+  const y = parts[0] ?? 0;
+  const mo = parts[1] ?? 1;
+  const da = parts[2] ?? 1;
+  const dt = new Date(y, mo - 1, da);
+  dt.setDate(dt.getDate() + days);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+interface ContractExpiryRow {
+  roomNumber: string;
+  tenantName: string;
+  endDate: string;
+  daysLeft: number;
+}
+
+interface LandlordPayRow {
+  propertyName: string;
+  periodLabel: string;
+  /** landlord_payments 金額為「元」 */
+  amountYuan: number;
+  days: number;
+}
+
 export default function DashboardPage() {
   const [summaryMonth, setSummaryMonth] = useState(currentMonthYm);
   const [summary, setSummary] = useState<SummaryApi | null>(null);
@@ -100,6 +136,9 @@ export default function DashboardPage() {
   const [expTaipower, setExpTaipower] = useState(0);
   const [expOther, setExpOther] = useState(0);
   const [pending, setPending] = useState<PaymentRow[]>([]);
+  const [contractExpiry, setContractExpiry] = useState<ContractExpiryRow[]>([]);
+  const [landlordOverdueRows, setLandlordOverdueRows] = useState<LandlordPayRow[]>([]);
+  const [landlordSoonRows, setLandlordSoonRows] = useState<LandlordPayRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -143,9 +182,21 @@ export default function DashboardPage() {
       for (const e of monthExp) {
         const cat = String(e.category);
         const amt = Number(e.amount ?? 0);
-        if (cat === 'rent' || cat === '房東租金') eland += amt;
-        else if (cat === 'utilities' || cat === '台電電費') etai += amt;
-        else eoth += amt;
+        if (
+          cat === 'rent' ||
+          cat === '房東租金' ||
+          cat === 'landlord_rent'
+        ) {
+          eland += amt;
+        } else if (
+          cat === 'utilities' ||
+          cat === '台電電費' ||
+          cat === 'utility_electric'
+        ) {
+          etai += amt;
+        } else {
+          eoth += amt;
+        }
       }
       setExpLandlord(eland);
       setExpTaipower(etai);
@@ -154,11 +205,103 @@ export default function DashboardPage() {
       const pend = await api.get<PaymentRow[]>('/api/payments?status=pending');
       const open = pend.filter((p) => Number(p.paidAmount ?? 0) < Number(p.totalAmount ?? 0));
       setPending(open);
+
+      const [tenantList, roomsList] = await Promise.all([
+        api
+          .get<
+            Array<{
+              id: string;
+              roomId: string;
+              nameZh?: string;
+              nameVi?: string;
+              expectedCheckoutDate?: string;
+            }>
+          >('/api/tenants?status=active')
+          .catch(() => []),
+        api.get<Array<{ id: string; roomNumber: string }>>('/api/rooms').catch(() => []),
+      ]);
+
+      const roomMap = new Map((Array.isArray(roomsList) ? roomsList : []).map((r) => [r.id, r.roomNumber]));
+      const today0 = new Date();
+      today0.setHours(0, 0, 0, 0);
+      const end90 = new Date(today0);
+      end90.setDate(end90.getDate() + 90);
+
+      const expRows: ContractExpiryRow[] = [];
+      for (const t of Array.isArray(tenantList) ? tenantList : []) {
+        const ex = t.expectedCheckoutDate;
+        if (!ex) continue;
+        const d = new Date(ex);
+        if (Number.isNaN(d.getTime())) continue;
+        d.setHours(0, 0, 0, 0);
+        if (d < today0 || d > end90) continue;
+        const daysLeft = Math.ceil((d.getTime() - today0.getTime()) / 86400000);
+        expRows.push({
+          roomNumber: roomMap.get(t.roomId) ?? '—',
+          tenantName: t.nameZh || t.nameVi || '—',
+          endDate: typeof ex === 'string' ? ex : String(ex),
+          daysLeft,
+        });
+      }
+      expRows.sort((a, b) => a.daysLeft - b.daysLeft);
+      setContractExpiry(expRows);
+
+      const todayYmd = todayYmdLocal();
+      const in14Ymd = addDaysYmdLocal(todayYmd, 14);
+      const overdueLp: LandlordPayRow[] = [];
+      const soonLp: LandlordPayRow[] = [];
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = localStorage.getItem('landlord_payments');
+          const arr = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(arr)) {
+            for (const p of arr) {
+              if (p.status === 'paid') continue;
+              const due = String(p.dueDate ?? '');
+              const amt = Number(p.amount ?? 0);
+              const prop = String(p.propertyName ?? '—');
+              const pl = String(p.periodLabel ?? '—');
+              if (due && due < todayYmd) {
+                const dueD = new Date(due + 'T12:00:00');
+                const daysOver = Math.max(
+                  0,
+                  Math.ceil((today0.getTime() - dueD.getTime()) / 86400000),
+                );
+                overdueLp.push({
+                  propertyName: prop,
+                  periodLabel: pl,
+                  amountYuan: amt,
+                  days: daysOver,
+                });
+              } else if (due && due >= todayYmd && due <= in14Ymd) {
+                const dueD = new Date(due + 'T12:00:00');
+                const daysUntil = Math.max(
+                  0,
+                  Math.ceil((dueD.getTime() - today0.getTime()) / 86400000),
+                );
+                soonLp.push({
+                  propertyName: prop,
+                  periodLabel: pl,
+                  amountYuan: amt,
+                  days: daysUntil,
+                });
+              }
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      setLandlordOverdueRows(overdueLp);
+      setLandlordSoonRows(soonLp);
     } catch (e) {
       console.error(e);
       setError(e instanceof Error ? e.message : '載入儀表板失敗');
       setSummary(null);
       setPending([]);
+      setContractExpiry([]);
+      setLandlordOverdueRows([]);
+      setLandlordSoonRows([]);
     } finally {
       setIsLoading(false);
     }
@@ -172,6 +315,7 @@ export default function DashboardPage() {
   const occ = summary?.occupiedRooms ?? 0;
   const occupancyPct = totalRooms > 0 ? Math.round((occ / totalRooms) * 1000) / 10 : 0;
   const net = summary ? summary.totalIncome - summary.totalExpense : 0;
+  const overdueBillCount = pending.filter((p) => overdueDaysFromBillMonth(p.paymentMonth) > 0).length;
 
   return (
     <PageShell>
@@ -207,7 +351,7 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">總物業數</CardTitle>
@@ -224,6 +368,16 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-slate-900">{summary?.totalRooms ?? '—'}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">空房數量</CardTitle>
+            <Home className="h-5 w-5 text-amber-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-slate-900">{summary?.vacantRooms ?? '—'}</div>
+            <p className="text-xs text-muted-foreground mt-1">空房／待租</p>
           </CardContent>
         </Card>
         <Card>
@@ -299,7 +453,14 @@ export default function DashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>待收帳單提醒</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle>待收帳單提醒</CardTitle>
+            {overdueBillCount > 0 ? (
+              <Badge variant="destructive" className="text-xs">
+                逾期 {overdueBillCount} 筆
+              </Badge>
+            ) : null}
+          </div>
           <CardDescription>狀態為待收且尚有餘額的帳單；逾過當月 5 號以紅色標示</CardDescription>
         </CardHeader>
         <CardContent>
@@ -342,6 +503,95 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CalendarClock className="h-5 w-5 text-slate-600" />
+            合約到期提醒（90 天內）
+          </CardTitle>
+          <CardDescription>預計退租日介於今天至未來 90 天之入住中租客</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {contractExpiry.length === 0 ? (
+            <p className="text-sm text-muted-foreground">目前無即將到期合約</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="py-2 pr-2">房號</th>
+                    <th className="py-2 pr-2">租客</th>
+                    <th className="py-2 pr-2">到期日</th>
+                    <th className="py-2">剩餘天數</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contractExpiry.map((r, idx) => {
+                    const urgent = r.daysLeft <= 30;
+                    const soon = r.daysLeft > 30 && r.daysLeft <= 90;
+                    return (
+                      <tr
+                        key={`${r.roomNumber}-${idx}`}
+                        className={`border-b border-slate-100 ${urgent ? 'text-red-600' : soon ? 'text-amber-800' : ''}`}
+                      >
+                        <td className="py-2 pr-2 font-medium">{r.roomNumber}</td>
+                        <td className="py-2 pr-2">{r.tenantName}</td>
+                        <td className="py-2 pr-2">{r.endDate}</td>
+                        <td className="py-2">{r.daysLeft} 天</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-600" />
+            房東付款提醒（本機）
+          </CardTitle>
+          <CardDescription>來自 localStorage landlord_payments：逾期與 14 天內到期</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          {landlordOverdueRows.length === 0 && landlordSoonRows.length === 0 ? (
+            <p className="text-muted-foreground">尚無房東付款待辦</p>
+          ) : (
+            <>
+              {landlordOverdueRows.length > 0 && (
+                <div>
+                  <p className="font-medium text-red-700 mb-2">逾期</p>
+                  <ul className="space-y-1">
+                    {landlordOverdueRows.map((r, i) => (
+                      <li key={`o-${i}`} className="text-red-700">
+                        物業 {r.propertyName} · {r.periodLabel} · {formatCurrency(r.amountYuan)} · 逾期{' '}
+                        {r.days} 天
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {landlordSoonRows.length > 0 && (
+                <div>
+                  <p className="font-medium text-amber-800 mb-2">即將到期（14 天內）</p>
+                  <ul className="space-y-1">
+                    {landlordSoonRows.map((r, i) => (
+                      <li key={`s-${i}`} className="text-amber-900">
+                        物業 {r.propertyName} · {r.periodLabel} · {formatCurrency(r.amountYuan)} · {r.days}{' '}
+                        天後到期
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
