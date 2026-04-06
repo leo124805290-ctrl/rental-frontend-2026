@@ -18,6 +18,7 @@ import {
   History,
   DoorOpen,
   Landmark,
+  Upload,
 } from 'lucide-react';
 import { UserSessionMenu } from '@/components/app-shell/user-session-menu';
 
@@ -33,6 +34,7 @@ const navItems = [
   { href: '/meter-history', label: '電錶歷史', icon: Gauge },
   { href: '/users', label: '使用者管理', icon: UserCog },
   { href: '/landlord-payments', label: '房東付款', icon: Landmark },
+  { href: '/import', label: '舊資料補登', icon: Upload },
 ];
 
 function pageTitleFromPath(pathname: string): string {
